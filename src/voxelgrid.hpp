@@ -120,7 +120,7 @@ public:
         // Treat voxelSize as cube edge length
         const float half = 0.5f * m_voxelSize;
 
-        const float voxelDiameter = std::sqrt(2.f * m_voxelSize * m_voxelSize);
+        const float voxelDiameter = std::sqrt(3. * m_voxelSize * m_voxelSize);
         const float xF = x * voxelDiameter;
         const float yF = m_y - y * voxelDiameter;
         const float zF = m_z - z * voxelDiameter;
