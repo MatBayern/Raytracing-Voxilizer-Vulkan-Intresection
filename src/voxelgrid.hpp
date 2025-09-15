@@ -1,3 +1,4 @@
+#pragma onc
 #include "obj_loader.h"
 #include "shaders/host_device.h"
 #include <glm/glm.hpp>
