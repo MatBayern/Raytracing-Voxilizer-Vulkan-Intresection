@@ -3,9 +3,11 @@
 #include <glm/glm.hpp>
 
 // STD
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <exception>
+#include <execution>
 #include <vector>
 struct AabbInternal
 {
@@ -19,9 +21,7 @@ class VoxelGrid
     const size_t m_y;
     const size_t m_z;
 
-    const float m_xOrg;
-    const float m_yOrg;
-    const float m_zOrg;
+    const vec3 m_org;
 
     const float m_voxelSize;
 
@@ -36,18 +36,17 @@ class VoxelGrid
     }
 
 public:
-    VoxelGrid(size_t x, size_t y, size_t z, float voxelSize, float xO = 0.f, float yO = 0.f, float zO = 0.f)
+    VoxelGrid(size_t x, size_t y, size_t z, float voxelSize, vec3 org = {0.f, 0.f, 0.f})
         : m_x(x),
           m_y(y),
           m_z(z),
-          m_xOrg(xO),
-          m_yOrg(yO),
-          m_zOrg(zO),
+          m_org(org),
           m_voxelSize(voxelSize),
           m_voxel(x * y * z, AabbInternal{}),
-          m_materials(x * y * z, MaterialObj{}),
+
           m_matIdx(x * y * z, -1)
     {
+        m_materials.reserve((x * y * z) / 4);
     }
 
     ~VoxelGrid() = default;
@@ -66,6 +65,7 @@ public:
                 aabbVector.push_back(tmp);
             }
         }
+
         return aabbVector;
     }
 
@@ -93,7 +93,7 @@ public:
         ret.reserve(m_materials.size());
 
         for (size_t i = 0; i < m_matIdx.size(); i++) {
-            if (m_matIdx[i] > 0) {
+            if (m_matIdx[i] >= 0) {
                 ret.push_back(m_matIdx[i]);
             }
         }
@@ -105,31 +105,32 @@ public:
         if (x >= m_x || y >= m_y || z >= m_z) {
             throw std::runtime_error("Index out of bounds");
         }
-
+        
         const size_t idx = map3dto1d(x, y, z);
+        const auto it = std::find(m_materials.begin(), m_materials.end(), material); // maybe use std::execution::par?
 
         // Set correct material
-        m_materials.push_back(material);
-        m_matIdx[idx] = static_cast<int>(m_materials.size());
+        if (it != m_materials.end()) {
+            m_matIdx[idx] = static_cast<int>(std::distance(m_materials.begin(), it));
+        } else {
+            m_materials.push_back(material);
+            m_matIdx[idx] = static_cast<int>(m_materials.size());
+        }
 
         // Treat voxelSize as cube edge length
         const float half = 0.5f * m_voxelSize;
 
         const float voxelDiameter = std::sqrt(2.f * m_voxelSize * m_voxelSize);
-        const float xF = m_xOrg + x * voxelDiameter;
-        const float yF = m_yOrg + m_y - y * voxelDiameter;
-        const float zF = m_zOrg + m_z - z * voxelDiameter;
+        const float xF = x * voxelDiameter;
+        const float yF = m_y - y * voxelDiameter;
+        const float zF = m_z - z * voxelDiameter;
 
         // Set Voxel size
         AabbInternal aabbTmp;
-        aabbTmp.maximum = glm::vec3(xF + 0.5f * voxelDiameter,
-            yF + 0.5f * voxelDiameter,
-            zF + 0.5f * voxelDiameter);
-        aabbTmp.minimum = glm::vec3(xF - 0.5f * voxelDiameter,
-            yF - 0.5f * voxelDiameter,
-            zF - 0.5f * voxelDiameter);
+        aabbTmp.maximum = m_org + glm::vec3(xF + 0.5f * voxelDiameter, yF + 0.5f * voxelDiameter, zF + 0.5f * voxelDiameter);
+        aabbTmp.minimum = m_org + glm::vec3(xF - 0.5f * voxelDiameter, yF - 0.5f * voxelDiameter, zF - 0.5f * voxelDiameter);
         aabbTmp.isUsed = true;
 
-        m_voxel[idx] = aabbTmp;
+        m_voxel[idx] = std::move(aabbTmp);
     }
 };

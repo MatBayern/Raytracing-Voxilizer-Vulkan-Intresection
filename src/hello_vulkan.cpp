@@ -643,7 +643,7 @@ auto HelloVulkan::AABBToVkGeometryKHR()
 
     VkAccelerationStructureBuildRangeInfoKHR offset{};
     offset.firstVertex = 0;
-    offset.primitiveCount = m_aabbsSize; // Nb aabb
+    offset.primitiveCount = m_aabbsSize; // numbers aabb
     offset.primitiveOffset = 0;
     offset.transformOffset = 0;
 
@@ -665,14 +665,14 @@ void HelloVulkan::createAABB()
     for (size_t z = 0; z < voxelAmout; z++) {
         for (size_t y = 0; y < voxelAmout; y++) {
             for (size_t x = 0; x < voxelAmout; x++) {
-                if (32 == z) {
+                if (voxelAmout/2 == y) {
                     vox.SetVoxel(x, y, z);
                 }
             }
         }
     }
     const auto aabs = vox.getAabbs();
-    m_aabbsSize = aabs.size();
+    m_aabbsSize = static_cast<uint32_t>(aabs.size());
 
     // Creating all buffers
     using vkBU = VkBufferUsageFlagBits;
@@ -684,6 +684,8 @@ void HelloVulkan::createAABB()
             | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR);
     m_VoxelMatIndexBuffer = m_alloc.createBuffer(cmdBuf, vox.getMatIdx(), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT);
     m_VoxelMatColorBuffer = m_alloc.createBuffer(cmdBuf, vox.getMatrials(), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT);
+    
+    
     genCmdBuf.submitAndWait(cmdBuf);
 
     // Debug information
