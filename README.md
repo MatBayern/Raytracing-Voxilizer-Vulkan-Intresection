@@ -39,9 +39,10 @@ git clone https://github.com/MatBayern/Raytracing-Voxilizer-Vulkan-Intresection.
 ### Windows (Visual Studio)
 
 ```bash
-cd Raytracing-Voxilizer-Vulkan
-cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DNVPRO_CORE_DIR=../nvpro_core
-cmake --build build --config Release
+cd Raytracing-Voxilizer-Vulkan-Intresection
+mkdir build
+cd build
+cmake ..
 ```
 
 > If CMake can’t find `nvpro_core`, pass `-DNVPRO_CORE_DIR=/absolute/path/to/nvpro_core`.
