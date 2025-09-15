@@ -24,6 +24,7 @@ class VoxelGrid
     const vec3 m_org;
 
     const float m_voxelSize;
+    const float m_voxelDiameter;
 
     //
     std::vector<MaterialObj> m_materials;
@@ -42,8 +43,8 @@ public:
           m_z(z),
           m_org(org),
           m_voxelSize(voxelSize),
+          m_voxelDiameter(std::sqrt(3.f * m_voxelSize * m_voxelSize)),
           m_voxel(x * y * z, AabbInternal{}),
-
           m_matIdx(x * y * z, -1)
     {
         m_materials.reserve((x * y * z) / 4);
@@ -105,7 +106,7 @@ public:
         if (x >= m_x || y >= m_y || z >= m_z) {
             throw std::runtime_error("Index out of bounds");
         }
-        
+
         const size_t idx = map3dto1d(x, y, z);
         const auto it = std::find(m_materials.begin(), m_materials.end(), material); // maybe use std::execution::par?
 
@@ -119,16 +120,14 @@ public:
 
         // Treat voxelSize as cube edge length
         const float half = 0.5f * m_voxelSize;
-
-        const float voxelDiameter = std::sqrt(3. * m_voxelSize * m_voxelSize);
-        const float xF = x * voxelDiameter;
-        const float yF = m_y - y * voxelDiameter;
-        const float zF = m_z - z * voxelDiameter;
+        const float xF = x * m_voxelDiameter;
+        const float yF = m_y - y * m_voxelDiameter;
+        const float zF = m_z - z * m_voxelDiameter;
 
         // Set Voxel size
         AabbInternal aabbTmp;
-        aabbTmp.maximum = m_org + glm::vec3(xF + 0.5f * voxelDiameter, yF + 0.5f * voxelDiameter, zF + 0.5f * voxelDiameter);
-        aabbTmp.minimum = m_org + glm::vec3(xF - 0.5f * voxelDiameter, yF - 0.5f * voxelDiameter, zF - 0.5f * voxelDiameter);
+        aabbTmp.maximum = m_org + glm::vec3(xF + 0.5f * m_voxelDiameter, yF + 0.5f * m_voxelDiameter, zF + 0.5f * m_voxelDiameter);
+        aabbTmp.minimum = m_org + glm::vec3(xF - 0.5f * m_voxelDiameter, yF - 0.5f * m_voxelDiameter, zF - 0.5f * m_voxelDiameter);
         aabbTmp.isUsed = true;
 
         m_voxel[idx] = std::move(aabbTmp);
