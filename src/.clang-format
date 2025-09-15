@@ -1,0 +1,20 @@
+Language: Cpp
+
+BasedOnStyle: WebKit
+
+AlignAfterOpenBracket: DontAlign
+AllowShortFunctionsOnASingleLine: true
+AllowShortIfStatementsOnASingleLine: true
+IndentCaseLabels: true
+NamespaceIndentation: None
+BinPackParameters: false
+BreakBeforeBraces: Mozilla
+BreakInheritanceList: BeforeComma
+BreakConstructorInitializers: BeforeColon
+Cpp11BracedListStyle: true
+SpaceBeforeCpp11BracedList: false
+SpaceInEmptyBlock: false
+IndentExternBlock: NoIndent
+IncludeCategories:
+  - Regex: '.*'
+    Priority: 1
