@@ -666,7 +666,7 @@ void HelloVulkan::createAABB()
         for (size_t y = 0; y < voxelAmout; y++) {
             for (size_t x = 0; x < voxelAmout; x++) {
                 if (voxelAmout/2 == y) {
-                    vox.SetVoxel(x, y, z);
+                    vox.setVoxel(x, y, z);
                 }
             }
         }

@@ -101,7 +101,7 @@ public:
         return ret;
     }
 
-    void SetVoxel(size_t x, size_t y, size_t z, const MaterialObj material = MaterialObj{})
+    void setVoxel(size_t x, size_t y, size_t z, const MaterialObj material = MaterialObj{})
     {
         if (x >= m_x || y >= m_y || z >= m_z) {
             throw std::runtime_error("Index out of bounds");
