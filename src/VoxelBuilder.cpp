@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <limits>
 #include <print>
+#include <thread>
 #include <vector>
 VoxelBuilder::VoxelBuilder(const std::filesystem::path& path)
 {
@@ -172,11 +173,9 @@ VoxelGrid VoxelBuilder::buildVoxelGrid(float voxelSize)
     const auto bb = computeBboxFromAttrib(m_attribs);
 
     // Debug: Print bounding box
-    std::println("Bounding box: min({},{},{}):", bb.min.x,bb.min.y,bb.min.z);
-    std::println("Bounding box: max({},{},{}):", bb.max.x,bb.max.y,bb.max.z);
-    std::println("Bounding box: center({},{},{}):", bb.center.x,bb.center.y,bb.center.z);
-
-    
+    std::println("Bounding box: min({},{},{}):", bb.min.x, bb.min.y, bb.min.z);
+    std::println("Bounding box: max({},{},{}):", bb.max.x, bb.max.y, bb.max.z);
+    std::println("Bounding box: center({},{},{}):", bb.center.x, bb.center.y, bb.center.z);
 
     const size_t width = static_cast<size_t>(std::ceil((bb.max.x - bb.min.x) / voxelSize));
     const size_t height = static_cast<size_t>(std::ceil((bb.max.y - bb.min.y) / voxelSize));
@@ -236,20 +235,9 @@ VoxelGrid VoxelBuilder::buildVoxelGrid(float voxelSize)
                 std::println("p2({},{},{})", p2.x, p2.y, p2.z);
             }
 
-            size_t voxelsBeforeIntersection = countSetVoxels(voxelGrid);
-
             computeIntersection(depth, height, width,
                 {voxelSize * 0.5f, voxelSize * 0.5f, voxelSize * 0.5f},
                 p0, p1, p2, voxelGrid, bb.min, material);
-
-            const size_t voxelsAfterIntersection = countSetVoxels(voxelGrid);
-
-            if (voxelsAfterIntersection > voxelsBeforeIntersection) {
-                voxelsSet += (voxelsAfterIntersection - voxelsBeforeIntersection);
-                if (triangleCount < 3) {
-                    std::println("-> Set {} voxels", (voxelsAfterIntersection - voxelsBeforeIntersection));
-                }
-            }
 
             triangleCount++;
         }
@@ -262,30 +250,43 @@ VoxelGrid VoxelBuilder::buildVoxelGrid(float voxelSize)
 
 void VoxelBuilder::computeIntersection(size_t depth, size_t height, size_t width, const glm::vec3& halfVoxelSize, const glm::vec3& v0, const glm::vec3& v1, const glm::vec3& v2, VoxelGrid& voxelGrid, const glm::vec3& gridMin, MaterialObj material)
 {
+    // TODO check if thread safe
     // Compute triangle bounding box for optimization
-    glm::vec3 triMin = glm::min(v0, glm::min(v1, v2));
-    glm::vec3 triMax = glm::max(v0, glm::max(v1, v2));
+    const glm::vec3 triMin = glm::min(v0, glm::min(v1, v2));
+    const glm::vec3 triMax = glm::max(v0, glm::max(v1, v2));
 
     // Convert to voxel indices with bounds checking
     const float voxelSize = halfVoxelSize.x * 2.0f;
-    int xStart = std::max(0, static_cast<int>((triMin.x - gridMin.x) / voxelSize));
-    int yStart = std::max(0, static_cast<int>((triMin.y - gridMin.y) / voxelSize));
-    int zStart = std::max(0, static_cast<int>((triMin.z - gridMin.z) / voxelSize));
 
-    int xEnd = std::min(static_cast<int>(width), static_cast<int>((triMax.x - gridMin.x) / voxelSize) + 2);
-    int yEnd = std::min(static_cast<int>(height), static_cast<int>((triMax.y - gridMin.y) / voxelSize) + 2);
-    int zEnd = std::min(static_cast<int>(depth), static_cast<int>((triMax.z - gridMin.z) / voxelSize) + 2);
+    const int xStart = std::max(0, static_cast<int>((triMin.x - gridMin.x) / voxelSize));
+    const int yStart = std::max(0, static_cast<int>((triMin.y - gridMin.y) / voxelSize));
+    const int zStart = std::max(0, static_cast<int>((triMin.z - gridMin.z) / voxelSize));
+
+    const int xEnd = std::min(static_cast<int>(width), static_cast<int>((triMax.x - gridMin.x) / voxelSize) + 2);
+    const int yEnd = std::min(static_cast<int>(height), static_cast<int>((triMax.y - gridMin.y) / voxelSize) + 2);
+    const int zEnd = std::min(static_cast<int>(depth), static_cast<int>((triMax.z - gridMin.z) / voxelSize) + 2);
+
+    const int mid = zStart + (zEnd - zStart) / 2;
 
     // Only check voxels that could potentially intersect the triangle
-    for (int z = zStart; z < zEnd; z++) {
-        for (int y = yStart; y < yEnd; y++) {
-            for (int x = xStart; x < xEnd; x++) {
-                if (triBoxOverlap(voxelGrid.getCorrds(x, y, z), halfVoxelSize, v0, v1, v2)) {
-                    voxelGrid.setVoxel(x, y, z, material);
+    auto worker = [&](int z0, int z1) {
+        for (int z = z0; z < z1; z++) {
+            for (int y = yStart; y < yEnd; y++) {
+                for (int x = xStart; x < xEnd; x++) {
+                    if (triBoxOverlap(voxelGrid.getCorrds(x, y, z),
+                            halfVoxelSize, v0, v1, v2)) {
+                        voxelGrid.setVoxel(x, y, z, material);
+                    }
                 }
             }
         }
-    }
+    };
+
+    std::thread t1(worker, zStart, mid);
+    std::thread t2(worker, mid, zEnd);
+
+    t1.join();
+    t2.join();
 }
 
 // Helper function to count set voxels
