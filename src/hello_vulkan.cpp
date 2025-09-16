@@ -24,6 +24,7 @@
 #include "stb_image.h"
 
 #include "hello_vulkan.h"
+#include "VoxelBuilder.hpp"
 #include "nvh/alignment.hpp"
 #include "nvh/cameramanipulator.hpp"
 #include "nvh/fileoperations.hpp"
@@ -659,18 +660,10 @@ auto HelloVulkan::AABBToVkGeometryKHR()
 void HelloVulkan::createAABB()
 {
 
-    constexpr size_t voxelAmout = 64;
-    VoxelGrid vox{voxelAmout, voxelAmout, voxelAmout, 1.f};
+    VoxelBuilder voxelBuilder{std::filesystem::path("C:/Users/Martin/Documents/Bachleor_Arbeit/Raytracing-Voxilizer-Vulkan-Intresection/media/scenes/wuson.obj")};
+    VoxelGrid vox = voxelBuilder.buildVoxelGrid(0.05f);
 
-    for (size_t z = 0; z < voxelAmout; z++) {
-        for (size_t y = 0; y < voxelAmout; y++) {
-            for (size_t x = 0; x < voxelAmout; x++) {
-                if (voxelAmout/2 == y) {
-                    vox.setVoxel(x, y, z);
-                }
-            }
-        }
-    }
+    
     const auto aabs = vox.getAabbs();
     m_aabbsSize = static_cast<uint32_t>(aabs.size());
 

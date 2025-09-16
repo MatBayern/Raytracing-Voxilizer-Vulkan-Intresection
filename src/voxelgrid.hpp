@@ -10,12 +10,14 @@
 #include <exception>
 #include <execution>
 #include <vector>
+
 struct AabbInternal
 {
     vec3 minimum = {0.f, 0.f, 0.f};
     vec3 maximum = {0.f, 0.f, 0.f};
     bool isUsed = false;
 };
+
 class VoxelGrid
 {
     const size_t m_x;
@@ -101,6 +103,18 @@ public:
         }
         return ret;
     }
+    vec3 getCorrds(size_t x, size_t y, size_t z) const
+    {
+        if (x >= m_x || y >= m_y || z >= m_z) {
+            throw std::runtime_error("Index out of bounds");
+        }
+        const float worldX = m_org.x + (static_cast<float>(x) + 0.5f) * m_voxelSize;
+        const float worldY = m_org.y + (static_cast<float>(y) + 0.5f) * m_voxelSize;
+        const float worldZ = m_org.z + (static_cast<float>(z) + 0.5f) * m_voxelSize;
+
+        vec3 ret = {worldX, worldY, worldZ}; // RVO
+        return ret;
+    }
 
     void setVoxel(size_t x, size_t y, size_t z, const MaterialObj material = MaterialObj{})
     {
@@ -109,7 +123,7 @@ public:
         }
 
         const size_t idx = map3dto1d(x, y, z);
-        const auto it = std::find(m_materials.begin(), m_materials.end(), material); // maybe use std::execution::par?
+        const auto it = std::find(m_materials.begin(), m_materials.end(), material); // maybe use std::execution::par? or use unordermap
 
         // Set correct material
         if (it != m_materials.end()) {
@@ -119,16 +133,16 @@ public:
             m_matIdx[idx] = static_cast<int>(m_materials.size());
         }
 
-        // Treat voxelSize as cube edge length
+        // Treat voxelSize as cube edge length we assume this are the center corrdinates
         const float half = 0.5f * m_voxelSize;
-        const float xF = x * m_voxelDiameter;
-        const float yF = m_y - y * m_voxelDiameter;
-        const float zF = m_z - z * m_voxelDiameter;
+        const float xF = m_org.x + (x + 0.5f) * m_voxelSize;
+        const float yF = m_org.y + (y + 0.5f) * m_voxelSize;
+        const float zF = m_org.z + (z + 0.5f) * m_voxelSize;
 
         // Set Voxel size
         AabbInternal aabbTmp;
-        aabbTmp.maximum = m_org + glm::vec3(xF + 0.5f * m_voxelDiameter, yF + 0.5f * m_voxelDiameter, zF + 0.5f * m_voxelDiameter);
-        aabbTmp.minimum = m_org + glm::vec3(xF - 0.5f * m_voxelDiameter, yF - 0.5f * m_voxelDiameter, zF - 0.5f * m_voxelDiameter);
+        aabbTmp.minimum = {xF - half, yF - half, zF - half};
+        aabbTmp.maximum = {xF + half, yF + half, zF + half};
         aabbTmp.isUsed = true;
 
         m_voxel[idx] = std::move(aabbTmp);

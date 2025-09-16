@@ -15,7 +15,7 @@ message(STATUS "Processing Project ${PROJNAME}:")
 
 #--------------------------------------------------------------------------------------------------
 # C++ target and defines
-set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD 23)
 add_executable(${PROJNAME})
 _add_project_definitions(${PROJNAME})
 
