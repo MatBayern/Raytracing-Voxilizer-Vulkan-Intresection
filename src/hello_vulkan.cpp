@@ -661,7 +661,7 @@ void HelloVulkan::createAABB()
 {
 
     VoxelBuilder voxelBuilder{std::filesystem::path("C:/Users/Martin/Documents/Bachleor_Arbeit/Raytracing-Voxilizer-Vulkan-Intresection/media/scenes/wuson.obj")};
-    VoxelGrid vox = voxelBuilder.buildVoxelGrid(0.05f);
+    VoxelGrid vox = voxelBuilder.buildVoxelGrid(1.5f);
 
     
     const auto aabs = vox.getAabbs();

@@ -18,6 +18,8 @@ void VoxelBuilder::readObjFile(const std::filesystem::path& path)
     if (!std::filesystem::exists(path)) {
         throw std::invalid_argument("Path does not exist!");
     }
+    // tinyobj::ObjReaderConfig readerConfig;
+    // readerConfig.mtl_search_path = "./"; // Path to material files
     tinyobj::ObjReader reader;
 
     reader.ParseFromFile(path.string());
@@ -170,16 +172,18 @@ VoxelGrid VoxelBuilder::buildVoxelGrid(float voxelSize)
     const auto bb = computeBboxFromAttrib(m_attribs);
 
     // Debug: Print bounding box
-    std::cout << "Bounding box: min(" << bb.min.x << ", " << bb.min.y << ", " << bb.min.z << ")" << std::endl;
-    std::cout << "              max(" << bb.max.x << ", " << bb.max.y << ", " << bb.max.z << ")" << std::endl;
-    std::cout << "              center(" << bb.center.x << ", " << bb.center.y << ", " << bb.center.z << ")" << std::endl;
+    std::println("Bounding box: min({},{},{}):", bb.min.x,bb.min.y,bb.min.z);
+    std::println("Bounding box: max({},{},{}):", bb.max.x,bb.max.y,bb.max.z);
+    std::println("Bounding box: center({},{},{}):", bb.center.x,bb.center.y,bb.center.z);
+
+    
 
     const size_t width = static_cast<size_t>(std::ceil((bb.max.x - bb.min.x) / voxelSize));
     const size_t height = static_cast<size_t>(std::ceil((bb.max.y - bb.min.y) / voxelSize));
     const size_t depth = static_cast<size_t>(std::ceil((bb.max.z - bb.min.z) / voxelSize));
 
-    std::cout << "Grid dimensions: " << width << "x" << height << "x" << depth << std::endl;
-    std::cout << "Voxel size: " << voxelSize << std::endl;
+    std::println("Grid dimensions: {}x{}x{}", width, height, depth);
+    std::println("Voxel size: {}", voxelSize);
 
     VoxelGrid voxelGrid{width, height, depth, voxelSize, bb.min};
 
@@ -196,8 +200,23 @@ VoxelGrid VoxelBuilder::buildVoxelGrid(float voxelSize)
 
     for (size_t s = 0; s < m_shapes.size(); s++) {
         const auto& mesh = m_shapes[s].mesh;
-        std::cout << "Shape " << s << " has " << mesh.indices.size() / 3 << " triangles" << std::endl;
+        const int materialId = m_shapes[s].mesh.material_ids[s];
+        MaterialObj material;
+        if (materialId > -1) {
+            const auto& materialToCopy = m_materials[materialId];
+            material.ior = materialToCopy.ior;
+            material.dissolve = materialToCopy.dissolve;
+            material.shininess = materialToCopy.shininess;
+            material.illum = materialToCopy.illum;
+            // VECS
+            material.ambient = {materialToCopy.ambient[0], materialToCopy.ambient[1], materialToCopy.ambient[2]};
+            material.diffuse = {materialToCopy.diffuse[0], materialToCopy.diffuse[1], materialToCopy.diffuse[2]};
+            material.specular = {materialToCopy.specular[0], materialToCopy.specular[1], materialToCopy.specular[2]};
+            material.transmittance = {materialToCopy.transmittance[0], materialToCopy.transmittance[1], materialToCopy.transmittance[2]};
+            material.emission = {materialToCopy.emission[0], materialToCopy.emission[1], materialToCopy.emission[2]};
 
+            // material.textureID = materialToCopy.;
+        }
         for (size_t i = 0; i < mesh.indices.size(); i += 3) { // Changed condition
             if (i + 2 >= mesh.indices.size()) break; // Safety check
 
@@ -221,7 +240,7 @@ VoxelGrid VoxelBuilder::buildVoxelGrid(float voxelSize)
 
             computeIntersection(depth, height, width,
                 {voxelSize * 0.5f, voxelSize * 0.5f, voxelSize * 0.5f},
-                p0, p1, p2, voxelGrid, bb.min);
+                p0, p1, p2, voxelGrid, bb.min, material);
 
             const size_t voxelsAfterIntersection = countSetVoxels(voxelGrid);
 
@@ -241,7 +260,7 @@ VoxelGrid VoxelBuilder::buildVoxelGrid(float voxelSize)
     return voxelGrid;
 }
 
-void VoxelBuilder::computeIntersection(size_t depth, size_t height, size_t width, const glm::vec3& halfVoxelSize, const glm::vec3& v0, const glm::vec3& v1, const glm::vec3& v2, VoxelGrid& voxelGrid, const glm::vec3& gridMin)
+void VoxelBuilder::computeIntersection(size_t depth, size_t height, size_t width, const glm::vec3& halfVoxelSize, const glm::vec3& v0, const glm::vec3& v1, const glm::vec3& v2, VoxelGrid& voxelGrid, const glm::vec3& gridMin, MaterialObj material)
 {
     // Compute triangle bounding box for optimization
     glm::vec3 triMin = glm::min(v0, glm::min(v1, v2));
@@ -262,7 +281,7 @@ void VoxelBuilder::computeIntersection(size_t depth, size_t height, size_t width
         for (int y = yStart; y < yEnd; y++) {
             for (int x = xStart; x < xEnd; x++) {
                 if (triBoxOverlap(voxelGrid.getCorrds(x, y, z), halfVoxelSize, v0, v1, v2)) {
-                    voxelGrid.setVoxel(x, y, z);
+                    voxelGrid.setVoxel(x, y, z, material);
                 }
             }
         }
