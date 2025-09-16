@@ -54,7 +54,7 @@ cmake ..
 From your build output directory (adjust the binary name/path for your platform):
 
 ```bash
-RaytracingVoxilizerVulkan.exe
+RaytracingVoxilizerVulkan.exe <Path to obj file> <Voxlesize>
 ```
 
 
