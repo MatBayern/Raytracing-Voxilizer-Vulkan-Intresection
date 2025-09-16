@@ -155,6 +155,6 @@ public:
     nvvk::Buffer m_VoxelMatColorBuffer; // Multiple materials
     nvvk::Buffer m_VoxelMatIndexBuffer; // Define which sphere uses which material
 
-    void createAABB();
+    void createAABB(const std::string& path, float voxleSize);
     auto AABBToVkGeometryKHR();
 };

@@ -657,11 +657,11 @@ auto HelloVulkan::AABBToVkGeometryKHR()
 //--------------------------------------------------------------------------------------------------
 // Creating all spheres
 //
-void HelloVulkan::createAABB()
+void HelloVulkan::createAABB(const std::string& path, float voxleSize)
 {
 
-    VoxelBuilder voxelBuilder{std::filesystem::path("C:/Users/Martin/Documents/Bachleor_Arbeit/Raytracing-Voxilizer-Vulkan-Intresection/media/scenes/wuson.obj")};
-    VoxelGrid vox = voxelBuilder.buildVoxelGrid(1.5f);
+    VoxelBuilder voxelBuilder{std::filesystem::path(path)};
+    VoxelGrid vox = voxelBuilder.buildVoxelGrid(voxleSize);
 
     
     const auto aabs = vox.getAabbs();
