@@ -37,7 +37,7 @@ private:
 
     void recenterMesh(tinyobj::attrib_t* attrib, const glm::vec3& center);
     void computeIntersection(size_t depth, size_t height, size_t width, const glm::vec3& halfVoxelSize, const glm::vec3& v0, const glm::vec3& v1, const glm::vec3& v2, VoxelGrid& voxelGrid, const glm::vec3& grid, MaterialObj material);
-    BBox computeBboxFromAttrib(const tinyobj::attrib_t& attrib);
+    BBox computeBboxFromAttrib(const tinyobj::attrib_t& attrib) const noexcept;
 
     // Helpers
     size_t countSetVoxels(const VoxelGrid& grid) const;

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.9.6 FATAL_ERROR)
-project(Raytracing-Voxilizer-Vulkan)
+project(Raytracing-Voxilizer-Vulkan-Intresection)
 
 # ------------------------------------------------------------
 # Locate nvpro_core (same logic as upstream)

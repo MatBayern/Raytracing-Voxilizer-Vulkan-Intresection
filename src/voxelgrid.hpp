@@ -80,13 +80,13 @@ public:
 
     AabbInternal getVoxel(size_t x, size_t y, size_t z) const
     {
-        if (x >= m_x || y >= m_y || z >= m_z) {
+        if (x >= m_x || y >= m_y || z >= m_z)[[unlikely]] {
             throw std::runtime_error("Index out of bounds");
         }
         return m_voxel[map3dto1d(x, y, z)];
     }
 
-    std::vector<MaterialObj> getMatrials() const
+    std::vector<MaterialObj> getMatrials() const noexcept
     {
         return m_materials;
     }
@@ -105,7 +105,7 @@ public:
     }
     vec3 getCorrds(size_t x, size_t y, size_t z) const
     {
-        if (x >= m_x || y >= m_y || z >= m_z) {
+        if (x >= m_x || y >= m_y || z >= m_z)[[unlikely]] {
             throw std::runtime_error("Index out of bounds");
         }
         const float worldX = m_org.x + (static_cast<float>(x) + 0.5f) * m_voxelSize;
@@ -118,15 +118,15 @@ public:
 
     void setVoxel(size_t x, size_t y, size_t z, const MaterialObj material = MaterialObj{})
     {
-        if (x >= m_x || y >= m_y || z >= m_z) {
+        if (x >= m_x || y >= m_y || z >= m_z)[[unlikely]] {
             throw std::runtime_error("Index out of bounds");
         }
 
         const size_t idx = map3dto1d(x, y, z);
-        const auto it = std::find(m_materials.begin(), m_materials.end(), material); // maybe use std::execution::par? or use unordermap
+        const auto it = std::find(std::execution::par, m_materials.begin(), m_materials.end(), material); // maybe use std::execution::par?
 
         // Set correct material
-        if (it != m_materials.end()) {
+        if (it != m_materials.end())[[likely]] {
             m_matIdx[idx] = static_cast<int>(std::distance(m_materials.begin(), it));
         } else {
             m_materials.push_back(material);
@@ -139,7 +139,7 @@ public:
         const float yF = m_org.y + (y + 0.5f) * m_voxelSize;
         const float zF = m_org.z + (z + 0.5f) * m_voxelSize;
 
-        // Set Voxel size
+        
         AabbInternal aabbTmp;
         aabbTmp.minimum = {xF - half, yF - half, zF - half};
         aabbTmp.maximum = {xF + half, yF + half, zF + half};

@@ -121,14 +121,14 @@ bool VoxelBuilder::triBoxOverlap(const glm::vec3& c, const glm::vec3& h, const g
     if (testEdgeAxes(e2)) return false;
 
     // 3) Test triangle plane against the box.
-    glm::vec3 n = glm::cross(e0, e1);
+    const glm::vec3 n = glm::cross(e0, e1);
     if (planeSeparates(n, h, p0)) return false;
 
     // If none of the axes separate, there is overlap.
     return true;
 }
 
-BBox VoxelBuilder::computeBboxFromAttrib(const tinyobj::attrib_t& attrib)
+BBox VoxelBuilder::computeBboxFromAttrib(const tinyobj::attrib_t& attrib) const noexcept
 {
     BBox bb{};
     bb.min = {std::numeric_limits<float>::infinity(),

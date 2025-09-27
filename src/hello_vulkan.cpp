@@ -16,15 +16,13 @@
  * SPDX-FileCopyrightText: Copyright (c) 2014-2021 NVIDIA CORPORATION
  * SPDX-License-Identifier: Apache-2.0
  */
-
 #include <sstream>
-
 #define STB_IMAGE_IMPLEMENTATION
 #include "obj_loader.h"
 #include "stb_image.h"
 
-#include "hello_vulkan.h"
 #include "VoxelBuilder.hpp"
+#include "hello_vulkan.h"
 #include "nvh/alignment.hpp"
 #include "nvh/cameramanipulator.hpp"
 #include "nvh/fileoperations.hpp"
@@ -35,7 +33,11 @@
 #include "nvvk/pipeline_vk.hpp"
 #include "nvvk/renderpasses_vk.hpp"
 #include "nvvk/shaders_vk.hpp"
-#include <random>
+
+// STD
+#include <chrono>
+#include <print>
+
 
 extern std::vector<std::string> defaultSearchPaths;
 
@@ -644,7 +646,7 @@ auto HelloVulkan::AABBToVkGeometryKHR()
 
     VkAccelerationStructureBuildRangeInfoKHR offset{};
     offset.firstVertex = 0;
-    offset.primitiveCount = m_aabbsSize; // numbers aabb
+    offset.primitiveCount = m_aabbsSize;
     offset.primitiveOffset = 0;
     offset.transformOffset = 0;
 
@@ -661,9 +663,11 @@ void HelloVulkan::createAABB(const std::string& path, float voxleSize)
 {
 
     VoxelBuilder voxelBuilder{std::filesystem::path(path)};
+    const auto start = std::chrono::high_resolution_clock::now();
     VoxelGrid vox = voxelBuilder.buildVoxelGrid(voxleSize);
+    const auto stop = std::chrono::high_resolution_clock::now();
+    std::println("Voxel build took {}", std::chrono::duration_cast<std::chrono::milliseconds>(stop - start));
 
-    
     const auto aabs = vox.getAabbs();
     m_aabbsSize = static_cast<uint32_t>(aabs.size());
 
@@ -671,14 +675,13 @@ void HelloVulkan::createAABB(const std::string& path, float voxleSize)
     using vkBU = VkBufferUsageFlagBits;
     nvvk::CommandPool genCmdBuf(m_device, m_graphicsQueueIndex);
     auto cmdBuf = genCmdBuf.createCommandBuffer();
-    
+
     m_AabbBuffer = m_alloc.createBuffer(cmdBuf, aabs,
         VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
             | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR);
     m_VoxelMatIndexBuffer = m_alloc.createBuffer(cmdBuf, vox.getMatIdx(), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT);
     m_VoxelMatColorBuffer = m_alloc.createBuffer(cmdBuf, vox.getMatrials(), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT);
-    
-    
+
     genCmdBuf.submitAndWait(cmdBuf);
 
     // Debug information
@@ -691,6 +694,7 @@ void HelloVulkan::createAABB(const std::string& path, float voxleSize)
     objDesc.materialAddress = nvvk::getBufferDeviceAddress(m_device, m_VoxelMatColorBuffer.buffer);
     objDesc.materialIndexAddress = nvvk::getBufferDeviceAddress(m_device, m_VoxelMatIndexBuffer.buffer);
     m_objDesc.emplace_back(objDesc);
+
     // For .obj Stuff
     ObjInstance instance{};
     instance.objIndex = static_cast<uint32_t>(m_objModel.size());
