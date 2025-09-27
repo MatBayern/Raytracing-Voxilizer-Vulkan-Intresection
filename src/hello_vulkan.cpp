@@ -22,6 +22,8 @@
 #include "stb_image.h"
 
 #include "VoxelBuilder.hpp"
+#include "voxelgridAABBstruct.hpp"
+
 #include "hello_vulkan.h"
 #include "nvh/alignment.hpp"
 #include "nvh/cameramanipulator.hpp"
@@ -662,9 +664,9 @@ auto HelloVulkan::AABBToVkGeometryKHR()
 void HelloVulkan::createAABB(const std::string& path, float voxleSize)
 {
 
-    VoxelBuilder voxelBuilder{std::filesystem::path(path)};
+    VoxelBuilder<VoxelGridAABBstruct> voxelBuilder{std::filesystem::path(path)};
     const auto start = std::chrono::high_resolution_clock::now();
-    VoxelGrid vox = voxelBuilder.buildVoxelGrid(voxleSize);
+    VoxelGridAABBstruct vox = voxelBuilder.buildVoxelGrid(voxleSize);
     const auto stop = std::chrono::high_resolution_clock::now();
     std::println("Voxel build took {}", std::chrono::duration_cast<std::chrono::milliseconds>(stop - start));
 

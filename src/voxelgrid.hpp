@@ -11,15 +11,10 @@
 #include <execution>
 #include <vector>
 
-struct AabbInternal
-{
-    vec3 minimum = {0.f, 0.f, 0.f};
-    vec3 maximum = {0.f, 0.f, 0.f};
-    bool isUsed = false;
-};
-
+template <typename T>
 class VoxelGrid
 {
+protected:
     const size_t m_x;
     const size_t m_y;
     const size_t m_z;
@@ -32,7 +27,7 @@ class VoxelGrid
     //
     std::vector<MaterialObj> m_materials;
     std::vector<int> m_matIdx;
-    std::vector<AabbInternal> m_voxel;
+    std::vector<T> m_voxel;
 
     constexpr size_t map3dto1d(size_t x, size_t y, size_t z) const noexcept
     {
@@ -47,40 +42,19 @@ public:
           m_org(org),
           m_voxelSize(voxelSize),
           m_voxelDiameter(std::sqrt(3.f * m_voxelSize * m_voxelSize)),
-          m_voxel(x * y * z, AabbInternal{}),
+          m_voxel(x * y * z, T{}),
           m_matIdx(x * y * z, -1)
     {
         m_materials.reserve((x * y * z) / 4);
     }
 
-    ~VoxelGrid() = default;
+    virtual ~VoxelGrid() = default;
 
-    std::vector<Aabb> getAabbs() const noexcept
+    virtual std::vector<Aabb> getAabbs() const noexcept = 0;
+
+    T getVoxel(size_t x, size_t y, size_t z) const
     {
-        std::vector<Aabb> aabbVector;
-        aabbVector.reserve(m_voxel.size() / 4);
-        // Remove all unset Voxels
-        for (const auto& voxel : m_voxel) {
-            if (voxel.isUsed) {
-                Aabb tmp{};
-                tmp.maximum = voxel.maximum;
-                tmp.minimum = voxel.minimum;
-
-                aabbVector.push_back(tmp);
-            }
-        }
-
-        return aabbVector;
-    }
-
-    const std::vector<AabbInternal>& data() const noexcept
-    {
-        return m_voxel;
-    }
-
-    AabbInternal getVoxel(size_t x, size_t y, size_t z) const
-    {
-        if (x >= m_x || y >= m_y || z >= m_z)[[unlikely]] {
+        if (x >= m_x || y >= m_y || z >= m_z) [[unlikely]] {
             throw std::runtime_error("Index out of bounds");
         }
         return m_voxel[map3dto1d(x, y, z)];
@@ -105,7 +79,7 @@ public:
     }
     vec3 getCorrds(size_t x, size_t y, size_t z) const
     {
-        if (x >= m_x || y >= m_y || z >= m_z)[[unlikely]] {
+        if (x >= m_x || y >= m_y || z >= m_z) [[unlikely]] {
             throw std::runtime_error("Index out of bounds");
         }
         const float worldX = m_org.x + (static_cast<float>(x) + 0.5f) * m_voxelSize;
@@ -116,35 +90,5 @@ public:
         return ret;
     }
 
-    void setVoxel(size_t x, size_t y, size_t z, const MaterialObj material = MaterialObj{})
-    {
-        if (x >= m_x || y >= m_y || z >= m_z)[[unlikely]] {
-            throw std::runtime_error("Index out of bounds");
-        }
-
-        const size_t idx = map3dto1d(x, y, z);
-        const auto it = std::find(std::execution::par, m_materials.begin(), m_materials.end(), material); // maybe use std::execution::par?
-
-        // Set correct material
-        if (it != m_materials.end())[[likely]] {
-            m_matIdx[idx] = static_cast<int>(std::distance(m_materials.begin(), it));
-        } else {
-            m_materials.push_back(material);
-            m_matIdx[idx] = static_cast<int>(m_materials.size());
-        }
-
-        // Treat voxelSize as cube edge length we assume this are the center corrdinates
-        const float half = 0.5f * m_voxelSize;
-        const float xF = m_org.x + (x + 0.5f) * m_voxelSize;
-        const float yF = m_org.y + (y + 0.5f) * m_voxelSize;
-        const float zF = m_org.z + (z + 0.5f) * m_voxelSize;
-
-        
-        AabbInternal aabbTmp;
-        aabbTmp.minimum = {xF - half, yF - half, zF - half};
-        aabbTmp.maximum = {xF + half, yF + half, zF + half};
-        aabbTmp.isUsed = true;
-
-        m_voxel[idx] = std::move(aabbTmp);
-    }
+    virtual void setVoxel(size_t x, size_t y, size_t z, const MaterialObj& material = MaterialObj{}) = 0;
 };
