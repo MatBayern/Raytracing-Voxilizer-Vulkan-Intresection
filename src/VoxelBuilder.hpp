@@ -71,7 +71,7 @@ private:
     // This test was taken from https://fileadmin.cs.lth.se/cs/Personal/Tomas_Akenine-Moller/code/tribox_tam.pdf
     bool axisSeparates(const glm::vec3& axis, float R, const glm::vec3& p0, const glm::vec3& p1, const glm::vec3& p2) const
     {
-        // If axis is (near) zero, skip — it can't be a separating axis.
+        // If axis is (near) zero, skip it can't be a separating axis.
         const float eps = 1e-8f;
         const float ax = std::fabs(axis.x) + std::fabs(axis.y) + std::fabs(axis.z);
         if (ax < eps) return false;
@@ -102,7 +102,7 @@ private:
     bool planeSeparates(const glm::vec3& normal, const glm::vec3& h, const glm::vec3& p0) const
     {
         // If triangle is degenerate (very small area), skip plane test.
-        const float eps = 1e-8f;
+        constexpr float eps = 1e-8f;
         glm::vec3 an = glm::abs(normal);
         const float len = an.x + an.y + an.z;
         if (len < eps) return false;
@@ -130,7 +130,7 @@ private:
 
         // 2) Test 9 cross-product axes = cross(edge, axisX/Y/Z).
         // For robustness and simplicity, project all three triangle verts each time.
-        // Axis from e × (1,0,0) = (0, -ez, ey) etc.
+        // Axis from e * (1,0,0) = (0, -ez, ey) etc.
         auto testEdgeAxes = [&](const glm::vec3& e) -> bool {
             glm::vec3 Lx = {0.0f, -e.z, e.y};
             float Rx = h.y * std::fabs(Lx.y) + h.z * std::fabs(Lx.z);
@@ -203,7 +203,7 @@ private:
             for (int z = zStart; z < zEnd; z++) {
                 for (int y = yStart; y < yEnd; y++) {
                     for (int x = xStart; x < xEnd; x++) {
-                        if (triBoxOverlap(voxelGrid.getCorrds(x, y, z),
+                        if (triBoxOverlapSchwarzSeidel(voxelGrid.getCorrds(x, y, z),
                                 halfVoxelSize, v0, v1, v2)) {
                             voxelGrid.setVoxel(x, y, z, material);
                         }
@@ -240,6 +240,118 @@ private:
             0.5 * (bb.min.y + bb.max.y),
             0.5 * (bb.min.z + bb.max.z)};
         return bb;
+    }
+
+    bool triBoxOverlapSchwarzSeidel(const glm::vec3& c, const glm::vec3& h, const glm::vec3& v0, const glm::vec3& v1, const glm::vec3& v2)
+    {
+        // Translate triangle to box-centered coordinates
+        glm::vec3 p0 = v0 - c;
+        glm::vec3 p1 = v1 - c;
+        glm::vec3 p2 = v2 - c;
+
+        // Triangle edges
+        const glm::vec3 e0 = p1 - p0;
+        const glm::vec3 e1 = p2 - p1;
+        const glm::vec3 e2 = p0 - p2;
+
+        // 1) AABB axis tests (x,y,z)
+        {
+            float minx = fminf(p0.x, fminf(p1.x, p2.x));
+            float maxx = fmaxf(p0.x, fmaxf(p1.x, p2.x));
+            if (minx > h.x || maxx < -h.x) return false;
+
+            float miny = fminf(p0.y, fminf(p1.y, p2.y));
+            float maxy = fmaxf(p0.y, fmaxf(p1.y, p2.y));
+            if (miny > h.y || maxy < -h.y) return false;
+
+            float minz = fminf(p0.z, fminf(p1.z, p2.z));
+            float maxz = fmaxf(p0.z, fmaxf(p1.z, p2.z));
+            if (minz > h.z || maxz < -h.z) return false;
+        }
+
+        // Precompute |edges| used by cross/axis projections (reduces flops & branches)
+        const glm::vec3 ae0 = glm::abs(e0);
+        const glm::vec3 ae1 = glm::abs(e1);
+        const glm::vec3 ae2 = glm::abs(e2);
+
+        // 2) 9 edge*axis SAT tests (optimized projections)
+        auto sepAxis = [&](float px0, float px1, float px2, float ra) -> bool {
+            float mn = fminf(px0, fminf(px1, px2));
+            float mx = fmaxf(px0, fmaxf(px1, px2));
+            return (mn > ra) || (mx < -ra);
+        };
+
+        // For each edge e, the relevant axes are e * X, e * Y, e * Z.
+        // We project p0,p1,p2 onto each axis; R is the box projection radius on that axis.
+        {
+            // e0  X = (0, -e0.z, e0.y)
+            float p0d = -p0.z * e0.y + p0.y * e0.z;
+            float p1d = -p1.z * e0.y + p1.y * e0.z;
+            float p2d = -p2.z * e0.y + p2.y * e0.z;
+            float R = h.y * ae0.z + h.z * ae0.y;
+            if (sepAxis(p0d, p1d, p2d, R)) return false;
+
+            // e0 * Y = (e0.z, 0, -e0.x)
+            p0d = p0.x * e0.z - p0.z * e0.x;
+            p1d = p1.x * e0.z - p1.z * e0.x;
+            p2d = p2.x * e0.z - p2.z * e0.x;
+            R = h.x * ae0.z + h.z * ae0.x;
+            if (sepAxis(p0d, p1d, p2d, R)) return false;
+
+            // e0 * Z = (-e0.y, e0.x, 0)
+            p0d = -p0.y * e0.x + p0.x * e0.y;
+            p1d = -p1.y * e0.x + p1.x * e0.y;
+            p2d = -p2.y * e0.x + p2.x * e0.y;
+            R = h.x * ae0.y + h.y * ae0.x;
+            if (sepAxis(p0d, p1d, p2d, R)) return false;
+        }
+        {
+            float p0d = -p0.z * e1.y + p0.y * e1.z;
+            float p1d = -p1.z * e1.y + p1.y * e1.z;
+            float p2d = -p2.z * e1.y + p2.y * e1.z;
+            float R = h.y * ae1.z + h.z * ae1.y;
+            if (sepAxis(p0d, p1d, p2d, R)) return false;
+
+            p0d = p0.x * e1.z - p0.z * e1.x;
+            p1d = p1.x * e1.z - p1.z * e1.x;
+            p2d = p2.x * e1.z - p2.z * e1.x;
+            R = h.x * ae1.z + h.z * ae1.x;
+            if (sepAxis(p0d, p1d, p2d, R)) return false;
+
+            p0d = -p0.y * e1.x + p0.x * e1.y;
+            p1d = -p1.y * e1.x + p1.x * e1.y;
+            p2d = -p2.y * e1.x + p2.x * e1.y;
+            R = h.x * ae1.y + h.y * ae1.x;
+            if (sepAxis(p0d, p1d, p2d, R)) return false;
+        }
+        {
+            float p0d = -p0.z * e2.y + p0.y * e2.z;
+            float p1d = -p1.z * e2.y + p1.y * e2.z;
+            float p2d = -p2.z * e2.y + p2.y * e2.z;
+            float R = h.y * ae2.z + h.z * ae2.y;
+            if (sepAxis(p0d, p1d, p2d, R)) return false;
+
+            p0d = p0.x * e2.z - p0.z * e2.x;
+            p1d = p1.x * e2.z - p1.z * e2.x;
+            p2d = p2.x * e2.z - p2.z * e2.x;
+            R = h.x * ae2.z + h.z * ae2.x;
+            if (sepAxis(p0d, p1d, p2d, R)) return false;
+
+            p0d = -p0.y * e2.x + p0.x * e2.y;
+            p1d = -p1.y * e2.x + p1.x * e2.y;
+            p2d = -p2.y * e2.x + p2.x * e2.y;
+            R = h.x * ae2.y + h.y * ae2.x;
+            if (sepAxis(p0d, p1d, p2d, R)) return false;
+        }
+
+        // 3) Triangle plane vs box (using projected radius)
+        const glm::vec3 n = glm::cross(e0, e1);
+        const glm::vec3 an = glm::abs(n);
+        const float r = h.x * an.x + h.y * an.y + h.z * an.z;
+        const float s = n.x * p0.x + n.y * p0.y + n.z * p0.z; // signed distance
+        if (fabsf(s) > r) return false;
+
+        return true; // Overlap
     }
 
 public:
