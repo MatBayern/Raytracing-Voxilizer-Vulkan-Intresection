@@ -20,19 +20,17 @@ struct BBox
     glm::vec3 min, max, center;
 };
 
-
-template<typename Derived>
+template <typename Derived>
 concept DerivedFromVoxelGrid = requires {
     // Check if there exists some T such that Derived inherits from Base<T>
     // This uses SFINAE to detect inheritance
     typename std::enable_if_t<
-        std::is_base_of_v<VoxelGrid<typename Derived::VoxelType>, Derived>
-    >;
+        std::is_base_of_v<VoxelGrid<typename Derived::VoxelType>, Derived>>;
     // Require that the derived class defines base_type
     typename Derived::VoxelType;
 };
 
-template <DerivedFromVoxelGrid T>
+template <DerivedFromVoxelGrid T, bool inParaell = true>
 class VoxelBuilder final
 {
 public:
@@ -180,10 +178,29 @@ private:
         const int zEnd = std::min(static_cast<int>(depth), static_cast<int>((triMax.z - gridMin.z) / voxelSize) + 2);
 
         const int mid = zStart + (zEnd - zStart) / 2;
+        if (inParaell) {
 
-        // Only check voxels that could potentially intersect the triangle
-        auto worker = [&](int z0, int z1) {
-            for (int z = z0; z < z1; z++) {
+            // Only check voxels that could potentially intersect the triangle
+            auto worker = [&](int z0, int z1) {
+                for (int z = z0; z < z1; z++) {
+                    for (int y = yStart; y < yEnd; y++) {
+                        for (int x = xStart; x < xEnd; x++) {
+                            if (triBoxOverlap(voxelGrid.getCorrds(x, y, z),
+                                    halfVoxelSize, v0, v1, v2)) {
+                                voxelGrid.setVoxel(x, y, z, material);
+                            }
+                        }
+                    }
+                }
+            };
+
+            std::thread t1(worker, zStart, mid);
+            std::thread t2(worker, mid, zEnd);
+
+            t1.join();
+            t2.join();
+        } else {
+            for (int z = zStart; z < zEnd; z++) {
                 for (int y = yStart; y < yEnd; y++) {
                     for (int x = xStart; x < xEnd; x++) {
                         if (triBoxOverlap(voxelGrid.getCorrds(x, y, z),
@@ -193,13 +210,7 @@ private:
                     }
                 }
             }
-        };
-
-        std::thread t1(worker, zStart, mid);
-        std::thread t2(worker, mid, zEnd);
-
-        t1.join();
-        t2.join();
+        }
     }
     BBox computeBboxFromAttrib(const tinyobj::attrib_t& attrib) const noexcept
     {
@@ -250,7 +261,7 @@ public:
 
         T voxelGrid{width, height, depth, voxelSize, bb.min};
 
-        auto loadPos = [&](const tinyobj::index_t& idx) {
+        const auto loadPos = [&](const tinyobj::index_t& idx) {
             const size_t vi = static_cast<size_t>(idx.vertex_index);
             const tinyobj::real_t vx = m_attribs.vertices[3 * vi];
             const tinyobj::real_t vy = m_attribs.vertices[3 * vi + 1];
@@ -298,7 +309,6 @@ public:
             }
         }
         std::println("Total triangles processed: {}", triangleCount);
-        
 
         return voxelGrid;
     }

@@ -9,6 +9,7 @@
 #include <cstddef>
 #include <exception>
 #include <execution>
+#include <unordered_map>
 #include <vector>
 
 template <typename T>
@@ -19,6 +20,8 @@ protected:
     const size_t m_y;
     const size_t m_z;
 
+    size_t m_voxelSet = 0;
+
     const vec3 m_org;
 
     const float m_voxelSize;
@@ -28,10 +31,19 @@ protected:
     std::vector<MaterialObj> m_materials;
     std::vector<int> m_matIdx;
     std::vector<T> m_voxel;
-
+    std::unordered_map<MaterialObj, int> m_materialMap;
     constexpr size_t map3dto1d(size_t x, size_t y, size_t z) const noexcept
     {
         return x + m_x * (y + m_y * z);
+    }
+
+    constexpr glm::uvec3 map1dto3d(size_t i) const noexcept
+    {
+        const size_t x = i % m_x;
+        const size_t y = (i / m_x) % m_y;
+        const size_t z = i / (m_x * m_y);
+
+        return {x, y, z};
     }
 
 public:
@@ -91,4 +103,18 @@ public:
     }
 
     virtual void setVoxel(size_t x, size_t y, size_t z, const MaterialObj& material = MaterialObj{}) = 0;
+
+    void addMatrialIfNeeded(size_t idx, const MaterialObj& material)
+    {
+        const auto it = m_materialMap.find(material);
+
+        if (it != m_materialMap.end()) [[likely]] {
+            m_matIdx[idx] = it->second;
+        } else {
+            const int newIndex = static_cast<int>(m_materials.size());
+            m_materials.push_back(material);
+            m_materialMap[material] = newIndex;
+            m_matIdx[idx] = newIndex;
+        }
+    }
 };

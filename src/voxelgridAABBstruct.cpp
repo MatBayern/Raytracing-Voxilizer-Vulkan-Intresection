@@ -30,14 +30,7 @@ void VoxelGridAABBstruct::setVoxel(size_t x, size_t y, size_t z, const MaterialO
     }
 
     const size_t idx = map3dto1d(x, y, z);
-    const auto it = std::find(m_materials.begin(), m_materials.end(), material);
-
-    if (it != m_materials.end()) [[likely]] {
-        m_matIdx[idx] = static_cast<int>(std::distance(m_materials.begin(), it));
-    } else {
-        m_materials.push_back(material);
-        m_matIdx[idx] = static_cast<int>(m_materials.size() - 1);
-    }
+    addMatrialIfNeeded(idx, material);
 
     // Treat voxelSize as cube edge length we assume this are the center corrdinates
     const float half = 0.5f * m_voxelSize;
@@ -51,4 +44,5 @@ void VoxelGridAABBstruct::setVoxel(size_t x, size_t y, size_t z, const MaterialO
     aabbTmp.isUsed = true;
 
     m_voxel[idx] = std::move(aabbTmp);
+    m_voxelSet++;
 }

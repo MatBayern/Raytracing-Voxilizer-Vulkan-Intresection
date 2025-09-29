@@ -21,8 +21,12 @@
 #include "obj_loader.h"
 #include "stb_image.h"
 
+// Voxel grid and builder
 #include "VoxelBuilder.hpp"
 #include "voxelgridAABBstruct.hpp"
+#include "voxelgridBool.hpp"
+#include "voxelgridVecEncoding.hpp"
+
 
 #include "hello_vulkan.h"
 #include "nvh/alignment.hpp"
@@ -39,7 +43,6 @@
 // STD
 #include <chrono>
 #include <print>
-
 
 extern std::vector<std::string> defaultSearchPaths;
 
@@ -664,13 +667,13 @@ auto HelloVulkan::AABBToVkGeometryKHR()
 void HelloVulkan::createAABB(const std::string& path, float voxleSize)
 {
 
-    VoxelBuilder<VoxelGridAABBstruct> voxelBuilder{std::filesystem::path(path)};
+    VoxelBuilder<VoxelGridBool, false> voxelBuilder{std::filesystem::path(path)};
     const auto start = std::chrono::high_resolution_clock::now();
-    VoxelGridAABBstruct vox = voxelBuilder.buildVoxelGrid(voxleSize);
+    VoxelGridBool vox = voxelBuilder.buildVoxelGrid(voxleSize);
+    const auto aabs = vox.getAabbs();
     const auto stop = std::chrono::high_resolution_clock::now();
     std::println("Voxel build took {}", std::chrono::duration_cast<std::chrono::milliseconds>(stop - start));
 
-    const auto aabs = vox.getAabbs();
     m_aabbsSize = static_cast<uint32_t>(aabs.size());
 
     // Creating all buffers

@@ -43,7 +43,7 @@ struct MaterialObj {
   int illum = 0;
   int textureID = -1;
 
-  bool operator==(const MaterialObj& other) {
+  bool operator==(const MaterialObj& other) const noexcept {
     return ambient == other.ambient && diffuse == other.diffuse &&
            specular == other.specular && transmittance == other.transmittance &&
            emission == other.emission && shininess == other.shininess &&
@@ -75,3 +75,42 @@ class ObjLoader {
   std::vector<std::string> m_textures;
   std::vector<int32_t> m_matIndx;
 };
+
+// Hash combine utility
+namespace {
+inline void hash_combine(std::size_t& seed, std::size_t h) {
+  seed ^= h + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+}
+}  // namespace
+
+// Hash specialization for glm::vec3
+namespace std {
+template <>
+struct hash<glm::vec3> {
+  std::size_t operator()(const glm::vec3& v) const noexcept {
+    std::size_t h = 0;
+    hash_combine(h, std::hash<float>{}(v.x));
+    hash_combine(h, std::hash<float>{}(v.y));
+    hash_combine(h, std::hash<float>{}(v.z));
+    return h;
+  }
+};
+
+template <>
+struct hash<MaterialObj> {
+  std::size_t operator()(const MaterialObj& m) const noexcept {
+    std::size_t h = 0;
+    hash_combine(h, std::hash<glm::vec3>{}(m.ambient));
+    hash_combine(h, std::hash<glm::vec3>{}(m.diffuse));
+    hash_combine(h, std::hash<glm::vec3>{}(m.specular));
+    hash_combine(h, std::hash<glm::vec3>{}(m.transmittance));
+    hash_combine(h, std::hash<glm::vec3>{}(m.emission));
+    hash_combine(h, std::hash<float>{}(m.shininess));
+    hash_combine(h, std::hash<float>{}(m.ior));
+    hash_combine(h, std::hash<float>{}(m.dissolve));
+    hash_combine(h, std::hash<int>{}(m.illum));
+    hash_combine(h, std::hash<int>{}(m.textureID));
+    return h;
+  }
+};
+}  // namespace std
