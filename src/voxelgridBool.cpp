@@ -34,11 +34,13 @@ std::vector<Aabb> VoxelGridBool::getAabbs() const noexcept
             if (i < totalVoxels) {
                 const glm::uvec3 gridCords = map1dto3d(i);
 
-                const float xF = m_org.x + (gridCords.x + 0.5f) * m_voxelSize;
-                const float yF = m_org.y + (gridCords.y + 0.5f) * m_voxelSize;
-                const float zF = m_org.z + (gridCords.z + 0.5f) * m_voxelSize;
+                const glm::uvec3 aabbVector = m_org  + ((gridCords + 0.5f) * 0.5f)
+    
+                // const float xF = m_org.x + (gridCords.x + 0.5f) * m_voxelSize;
+                // const float yF = m_org.y + (gridCords.y + 0.5f) * m_voxelSize;
+                // const float zF = m_org.z + (gridCords.z + 0.5f) * m_voxelSize;
 
-                Aabb tmp{{xF - half, yF - half, zF - half}, {xF + half, yF + half, zF + half}};
+                Aabb tmp{aabbVector - half, aabbVector + half};
 
                 ret.emplace_back(tmp);
             } else {
