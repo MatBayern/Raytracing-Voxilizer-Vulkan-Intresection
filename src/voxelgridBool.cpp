@@ -28,9 +28,8 @@ std::vector<Aabb> VoxelGridBool::getAabbs() const noexcept
 
         // Process each set bit in this int
         while (intVal != 0) {
-            const int leadingZeros = std::countl_zero(intVal);
-            const size_t bitIdx = 31 - leadingZeros;
-            const size_t i = intIdx * 32 + bitIdx;
+            const int trailingZeros = std::countr_zero(intVal);
+            const size_t i = intIdx * 32 + trailingZeros;
 
             if (i < totalVoxels) {
                 const glm::uvec3 gridCords = map1dto3d(i);
