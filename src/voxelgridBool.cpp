@@ -34,7 +34,7 @@ std::vector<Aabb> VoxelGridBool::getAabbs() const noexcept
             if (i < totalVoxels) {
                 const glm::uvec3 gridCords = map1dto3d(i);
 
-                const glm::uvec3 aabbVector = m_org  + ((gridCords + 0.5f) * m_voxelSize)
+                const glm::vec3 aabbVector = m_org  + ((gridCords + 0.5f) * m_voxelSize)
     
                 // const float xF = m_org.x + (gridCords.x + 0.5f) * m_voxelSize;
                 // const float yF = m_org.y + (gridCords.y + 0.5f) * m_voxelSize;
