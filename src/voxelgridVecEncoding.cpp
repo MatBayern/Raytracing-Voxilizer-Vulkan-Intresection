@@ -32,7 +32,7 @@ void VoxelGridVec::setVoxel(size_t x, size_t y, size_t z, const MaterialObj& mat
     const glm::vec3 aabbVector = m_org + ((pos + 0.5f) * m_voxelSize);
     Aabb tmp{aabbVector - half, aabbVector + half}; // min vec, max vec
 
-    m_voxel[m_voxelSet] = tmp;
+    m_voxel.emplace_back(aabbVector - half, aabbVector + half);
 
     m_voxelSet++;
 }
