@@ -255,19 +255,18 @@ private:
         const glm::vec3 e2 = p0 - p2;
 
         // 1) AABB axis tests (x,y,z)
-        {
-            float minx = fminf(p0.x, fminf(p1.x, p2.x));
-            float maxx = fmaxf(p0.x, fmaxf(p1.x, p2.x));
-            if (minx > h.x || maxx < -h.x) return false;
 
-            float miny = fminf(p0.y, fminf(p1.y, p2.y));
-            float maxy = fmaxf(p0.y, fmaxf(p1.y, p2.y));
-            if (miny > h.y || maxy < -h.y) return false;
+        float minx = fminf(p0.x, fminf(p1.x, p2.x));
+        float maxx = fmaxf(p0.x, fmaxf(p1.x, p2.x));
+        if (minx > h.x || maxx < -h.x) return false;
 
-            float minz = fminf(p0.z, fminf(p1.z, p2.z));
-            float maxz = fmaxf(p0.z, fmaxf(p1.z, p2.z));
-            if (minz > h.z || maxz < -h.z) return false;
-        }
+        float miny = fminf(p0.y, fminf(p1.y, p2.y));
+        float maxy = fmaxf(p0.y, fmaxf(p1.y, p2.y));
+        if (miny > h.y || maxy < -h.y) return false;
+
+        float minz = fminf(p0.z, fminf(p1.z, p2.z));
+        float maxz = fmaxf(p0.z, fmaxf(p1.z, p2.z));
+        if (minz > h.z || maxz < -h.z) return false;
 
         // Precompute |edges| used by cross/axis projections (reduces flops & branches)
         const glm::vec3 ae0 = glm::abs(e0);
@@ -275,9 +274,9 @@ private:
         const glm::vec3 ae2 = glm::abs(e2);
 
         // 2) 9 edge*axis SAT tests (optimized projections)
-        auto sepAxis = [&](float px0, float px1, float px2, float ra) -> bool {
-            float mn = fminf(px0, fminf(px1, px2));
-            float mx = fmaxf(px0, fmaxf(px1, px2));
+        const auto sepAxis = [&](float px0, float px1, float px2, float ra) -> bool {
+            const float mn = fminf(px0, fminf(px1, px2));
+            const float mx = fmaxf(px0, fmaxf(px1, px2));
             return (mn > ra) || (mx < -ra);
         };
 

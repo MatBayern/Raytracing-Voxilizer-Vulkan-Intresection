@@ -15,7 +15,7 @@ VoxelGridBool::VoxelGridBool(size_t x, size_t y, size_t z, float voxelSize, vec3
 std::vector<Aabb> VoxelGridBool::getAabbs() const noexcept
 {
     std::vector<Aabb> ret;
-    ret.reserve(m_voxelSet); // Reserve for worst case (all bits set)
+    ret.reserve(m_voxelSet);
     const float half = 0.5f * m_voxelSize;
 
     const size_t totalVoxels = m_x * m_y * m_z;
@@ -32,22 +32,20 @@ std::vector<Aabb> VoxelGridBool::getAabbs() const noexcept
             const size_t i = intIdx * 32 + trailingZeros;
 
             if (i < totalVoxels) {
-                const glm::uvec3 gridCords = map1dto3d(i);
+                const glm::vec3 gridCords = map1dto3d(i);
 
-                const glm::vec3 aabbVector = m_org  + ((gridCords + 0.5f) * m_voxelSize)
+                const glm::vec3 aabbVector = m_org + ((gridCords + 0.5f) * m_voxelSize);
     
                 // const float xF = m_org.x + (gridCords.x + 0.5f) * m_voxelSize;
                 // const float yF = m_org.y + (gridCords.y + 0.5f) * m_voxelSize;
                 // const float zF = m_org.z + (gridCords.z + 0.5f) * m_voxelSize;
 
-                Aabb tmp{aabbVector - half, aabbVector + half};
-
-                ret.emplace_back(tmp);
+                ret.emplace_back(aabbVector - half, aabbVector + half);
             } else {
                 break;
             }
             // Clear the processed bit
-            intVal &= ~(1u << bitIdx);
+            intVal &= ~(1u << trailingZeros);
         }
     }
     return ret;

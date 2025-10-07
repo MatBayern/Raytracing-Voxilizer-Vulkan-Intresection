@@ -9,7 +9,7 @@ VoxelGridAABBstruct::VoxelGridAABBstruct(size_t x, size_t y, size_t z, float vox
 std::vector<Aabb> VoxelGridAABBstruct::getAabbs() const noexcept
 {
     std::vector<Aabb> aabbVector;
-    aabbVector.reserve(m_voxel.size() / 4);
+    aabbVector.reserve(m_voxelSet);
     // Remove all unset Voxels
     for (const auto& voxel : m_voxel) {
         if (voxel.isUsed) {
@@ -33,14 +33,16 @@ void VoxelGridAABBstruct::setVoxel(size_t x, size_t y, size_t z, const MaterialO
     addMatrialIfNeeded(idx, material);
 
     // Treat voxelSize as cube edge length we assume this are the center corrdinates
-    const float half = 0.5f * m_voxelSize;
-    const float xF = m_org.x + (x + 0.5f) * m_voxelSize;
-    const float yF = m_org.y + (y + 0.5f) * m_voxelSize;
-    const float zF = m_org.z + (z + 0.5f) * m_voxelSize;
+    
+    const glm::vec3 pos{x, y, z};
 
+    const glm::vec3 aabbVector = m_org + ((pos + 0.5f) * m_voxelSize);
+     const float half = 0.5f * m_voxelSize;
+    
     AabbInternal aabbTmp;
-    aabbTmp.minimum = {xF - half, yF - half, zF - half};
-    aabbTmp.maximum = {xF + half, yF + half, zF + half};
+    
+    aabbTmp.minimum = aabbVector - half;
+    aabbTmp.maximum = aabbVector + half;
     aabbTmp.isUsed = true;
 
     m_voxel[idx] = std::move(aabbTmp);

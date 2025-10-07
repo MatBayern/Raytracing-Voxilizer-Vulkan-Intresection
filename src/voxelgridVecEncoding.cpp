@@ -22,15 +22,17 @@ void VoxelGridVec::setVoxel(size_t x, size_t y, size_t z, const MaterialObj& mat
         throw std::runtime_error("Index out of bounds");
     }
 
-    addMatrialIfNeeded(m_voxelSet++, material);
+    addMatrialIfNeeded(m_voxelSet, material);
 
     // Treat voxelSize as cube edge length we assume this are the center corrdinates
     const float half = 0.5f * m_voxelSize;
-    const float xF = m_org.x + (x + 0.5f) * m_voxelSize;
-    const float yF = m_org.y + (y + 0.5f) * m_voxelSize;
-    const float zF = m_org.z + (z + 0.5f) * m_voxelSize;
-    Aabb tmp{{xF - half, yF - half, zF - half}, {xF + half, yF + half, zF + half}}; // min vec, max vec
+
+    const glm::vec3 pos{x, y, z};
+
+    const glm::vec3 aabbVector = m_org + ((pos + 0.5f) * m_voxelSize);
+    Aabb tmp{aabbVector - half, aabbVector + half}; // min vec, max vec
 
     m_voxel[m_voxelSet] = tmp;
+
     m_voxelSet++;
 }

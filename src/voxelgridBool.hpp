@@ -2,6 +2,7 @@
 #include "shaders/host_device.h"
 #include "voxelgrid.hpp"
 #include <glm/glm.hpp>
+#include "octTree.hpp"
 
 class VoxelGridBool final : public VoxelGrid<unsigned int>
 {
@@ -15,4 +16,5 @@ public:
     virtual void setVoxel(size_t x, size_t y, size_t z, const MaterialObj& material = MaterialObj{});
 
 private:
+    // OctTree<VoxelType> m_tree;
 };
