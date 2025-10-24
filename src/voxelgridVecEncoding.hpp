@@ -10,9 +10,9 @@ public:
 
     VoxelGridVec(size_t x, size_t y, size_t z, float voxelSize, vec3 org);
 
-    virtual std::vector<Aabb> getAabbs() const noexcept;
+    std::vector<Aabb> getAabbs() const noexcept override;
 
-    virtual void setVoxel(size_t x, size_t y, size_t z, const MaterialObj& material = MaterialObj{});
+    void setVoxel(size_t x, size_t y, size_t z, const MaterialObj& material = MaterialObj{}) override;
 
 private:
     size_t m_voxelCount = 0;

@@ -18,9 +18,9 @@ public:
 
     VoxelGridAABBstruct(size_t x, size_t y, size_t z, float voxelSize, vec3 org = {0.f, 0.f, 0.f});
 
-    virtual std::vector<Aabb> getAabbs() const noexcept;
+    std::vector<Aabb> getAabbs() const noexcept override;
 
-    virtual void setVoxel(size_t x, size_t y, size_t z, const MaterialObj& material = MaterialObj{});
+    void setVoxel(size_t x, size_t y, size_t z, const MaterialObj& material = MaterialObj{}) override;
 
 private:
 };

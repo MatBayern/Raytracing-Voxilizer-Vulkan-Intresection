@@ -30,7 +30,7 @@ concept DerivedFromVoxelGrid = requires {
     typename Derived::VoxelType;
 };
 
-template <DerivedFromVoxelGrid T, bool inParaell = true>
+template <DerivedFromVoxelGrid T, bool inParaell = false>
 class VoxelBuilder final
 {
 public:
@@ -178,7 +178,7 @@ private:
         const int zEnd = std::min(static_cast<int>(depth), static_cast<int>((triMax.z - gridMin.z) / voxelSize) + 2);
 
         const int mid = zStart + (zEnd - zStart) / 2;
-        if (inParaell) {
+        if constexpr(inParaell) {
 
             // Only check voxels that could potentially intersect the triangle
             auto worker = [&](int z0, int z1) {

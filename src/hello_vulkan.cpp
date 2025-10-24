@@ -667,12 +667,17 @@ auto HelloVulkan::AABBToVkGeometryKHR()
 void HelloVulkan::createAABB(const std::string& path, float voxleSize)
 {
 
-    VoxelBuilder<VoxelGridBool, false> voxelBuilder{std::filesystem::path(path)};
-    const auto start = std::chrono::high_resolution_clock::now();
-    VoxelGridBool vox = voxelBuilder.buildVoxelGrid(voxleSize);
-    const auto aabs = vox.getAabbs();
-    const auto stop = std::chrono::high_resolution_clock::now();
-    std::println("Voxel build took {}", std::chrono::duration_cast<std::chrono::milliseconds>(stop - start));
+    VoxelBuilder<VoxelGridAABBstruct> voxelBuilder{std::filesystem::path(path)};
+    const auto startVoxelGrid = std::chrono::high_resolution_clock::now();
+    VoxelGridAABBstruct vox = voxelBuilder.buildVoxelGrid(voxleSize);
+    const auto stopVoxelGrid = std::chrono::high_resolution_clock::now();
+    
+    const auto startAabb = std::chrono::high_resolution_clock::now();
+    const std::vector<Aabb> aabs = vox.getAabbs();
+    const auto stopAabb = std::chrono::high_resolution_clock::now();
+    
+    std::println("Voxel build took {}", std::chrono::duration_cast<std::chrono::milliseconds>(stopVoxelGrid - startVoxelGrid));
+    std::println("Aabb build took {}", std::chrono::duration_cast<std::chrono::milliseconds>(stopAabb - startAabb));
 
     m_aabbsSize = static_cast<uint32_t>(aabs.size());
 
