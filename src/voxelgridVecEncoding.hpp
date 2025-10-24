@@ -13,7 +13,4 @@ public:
     std::vector<Aabb> getAabbs() const noexcept override;
 
     void setVoxel(size_t x, size_t y, size_t z, const MaterialObj& material = MaterialObj{}) override;
-
-private:
-    size_t m_voxelCount = 0;
 };
