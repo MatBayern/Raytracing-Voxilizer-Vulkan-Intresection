@@ -84,6 +84,7 @@ private:
         const float triMax = std::max(p0d, std::max(p1d, p2d));
         return (triMin > R) || (triMax < -R);
     }
+
     bool aabbAxisSeparates(const glm::vec3& h, const glm::vec3& p0, const glm::vec3& p1, const glm::vec3& p2) const
     {
         const float minx = std::min(p0.x, std::min(p1.x, p2.x));

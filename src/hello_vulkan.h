@@ -27,6 +27,8 @@
 #include "shaders/host_device.h"
 #include "voxelgrid.hpp"
 
+#include "octTree.hpp"
+
 // #VKRay
 #include "nvvk/raytraceKHR_vk.hpp"
 
