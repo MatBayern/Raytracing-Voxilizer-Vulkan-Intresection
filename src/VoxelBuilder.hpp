@@ -14,11 +14,12 @@
 #include <thread>
 #include <type_traits>
 #include <vector>
-
+namespace {
 struct BBox
 {
     glm::vec3 min, max, center;
 };
+} // namespace
 
 template <typename Derived>
 concept DerivedFromVoxelGrid = requires {
@@ -72,7 +73,7 @@ private:
     bool axisSeparates(const glm::vec3& axis, float R, const glm::vec3& p0, const glm::vec3& p1, const glm::vec3& p2) const
     {
         // If axis is (near) zero, skip it can't be a separating axis.
-        const float eps = 1e-8f;
+        constexpr float eps = 1e-8f;
         const float ax = std::fabs(axis.x) + std::fabs(axis.y) + std::fabs(axis.z);
         if (ax < eps) return false;
 
@@ -116,14 +117,14 @@ private:
     bool triBoxOverlap(const glm::vec3& c, const glm::vec3& h, const glm::vec3& v0, const glm::vec3& v1, const glm::vec3& v2) const
     {
         // Translate triangle so the box is centered at the origin.
-        glm::vec3 p0 = v0 - c;
-        glm::vec3 p1 = v1 - c;
-        glm::vec3 p2 = v2 - c;
+        const glm::vec3 p0 = v0 - c;
+        const glm::vec3 p1 = v1 - c;
+        const glm::vec3 p2 = v2 - c;
 
         // Edges
-        glm::vec3 e0 = p1 - p0;
-        glm::vec3 e1 = p2 - p1;
-        glm::vec3 e2 = p0 - p2;
+        const glm::vec3 e0 = p1 - p0;
+        const glm::vec3 e1 = p2 - p1;
+        const glm::vec3 e2 = p0 - p2;
 
         // 1) Test the 3 AABB axes (x, y, z).
         if (aabbAxisSeparates(h, p0, p1, p2)) return false;
@@ -178,7 +179,7 @@ private:
         const int zEnd = std::min(static_cast<int>(depth), static_cast<int>((triMax.z - gridMin.z) / voxelSize) + 2);
 
         const int mid = zStart + (zEnd - zStart) / 2;
-        if constexpr(inParaell) {
+        if constexpr (inParaell) {
 
             // Only check voxels that could potentially intersect the triangle
             auto worker = [&](int z0, int z1) {
@@ -235,10 +236,8 @@ private:
             bb.max.z = std::max(bb.max.z, z);
         }
 
-        bb.center = {
-            0.5 * (bb.min.x + bb.max.x),
-            0.5 * (bb.min.y + bb.max.y),
-            0.5 * (bb.min.z + bb.max.z)};
+        bb.center = (bb.min + bb.max) * 0.5f;
+
         return bb;
     }
 
