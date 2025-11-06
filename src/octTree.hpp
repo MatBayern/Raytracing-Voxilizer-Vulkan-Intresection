@@ -1,4 +1,8 @@
 #pragma once
+#include "shaders/host_device.h"
+#include "tiny_obj_loader.h"
+#include "voxelgrid.hpp"
+#include "voxelgridAABBstruct.hpp"
 #include <glm/glm.hpp>
 
 #include <algorithm>
@@ -6,10 +10,12 @@
 #include <cmath>
 #include <cstdint>
 #include <fstream>
+#include <functional>
 #include <iostream>
 #include <string>
 #include <unordered_set>
 #include <vector>
+#include <filesystem>
 
 // Triangle structure
 struct Triangle
@@ -24,6 +30,15 @@ struct Triangle
         glm::vec3 e2 = v2 - v0;
         normal = glm::cross(e1, e2);
     }
+};
+
+struct VoxelInfo
+{
+    int x, y, z; // Grid coordinates (0 to gridSize-1)
+    glm::vec3 worldPos; // World position (voxel center)
+    int level; // Octree level (0 = finest)
+    bool isSet; // Is voxel set?
+    int nodeIndex; // Index in level array
 };
 
 // Octree node structure
@@ -61,12 +76,16 @@ private:
     int m_gridSize;
     float m_voxelSize;
     glm::vec3 m_gridMin;
+    tinyobj::attrib_t m_attribs;
+    std::vector<tinyobj::shape_t> m_shapes;
+    std::vector<tinyobj::material_t> m_materials;
 
 public:
     SparseOctreeVoxelizer(int gridSize) : m_gridSize(gridSize)
     {
-        m_maxLevel = static_cast<int>(std::log2(gridSize)) - 2; // -2 for sub-grid
         m_voxelSize = 1.0f / gridSize;
+        m_maxLevel = static_cast<int>(std::log2(gridSize)) - 2; // -2 for sub-grid
+        
         m_gridMin = glm::vec3(0, 0, 0);
         m_levelNodes.resize(m_maxLevel + 1);
     }
@@ -255,7 +274,7 @@ public:
         float nx, ny; // Edge normal in 2D
         float d; // Offset
 
-        bool test(float px, float py) const
+        bool test(float px, float py) const noexcept
         {
             return (nx * px + ny * py + d) > 0;
         }
@@ -642,5 +661,110 @@ public:
         }
 
         return 0.0f;
+    }
+
+    constexpr void decodeMorton(int morton, int& x, int& y, int& z) const noexcept
+    {
+        x = y = z = 0;
+        for (int i = 0; i < 10; i++) {
+            x |= ((morton >> (3 * i)) & 1) << i;
+            y |= ((morton >> (3 * i + 1)) & 1) << i;
+            z |= ((morton >> (3 * i + 2)) & 1) << i;
+        }
+    }
+
+    // Iterator callback function type
+    using VoxelCallback = std::function<void(const VoxelInfo&)>;
+
+    void iterateSetVoxels(VoxelCallback callback) const
+    {
+        for (size_t nodeIdx = 0; nodeIdx < m_levelNodes[0].size(); nodeIdx++) {
+            const auto& node = m_levelNodes[0][nodeIdx];
+
+            // Decode node position
+            int nodeX, nodeY, nodeZ;
+            decodeMorton(node.mortonCode, nodeX, nodeY, nodeZ);
+
+            // Iterate through all 64 voxels in sub-grid
+            for (int lz = 0; lz < 4; lz++) {
+                for (int ly = 0; ly < 4; ly++) {
+                    for (int lx = 0; lx < 4; lx++) {
+                        if (getSubGridBit(node.voxelData, lx, ly, lz)) {
+                            VoxelInfo info;
+                            info.x = nodeX * 4 + lx;
+                            info.y = nodeY * 4 + ly;
+                            info.z = nodeZ * 4 + lz;
+                            info.worldPos = glm::vec3(
+                                (info.x + 0.5f) * m_voxelSize,
+                                (info.y + 0.5f) * m_voxelSize,
+                                (info.z + 0.5f) * m_voxelSize);
+                            info.level = 0;
+                            info.isSet = true;
+                            info.nodeIndex = static_cast<int>(nodeIdx);
+
+                            callback(info);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    std::vector<Aabb> getAllSetVoxels() const
+    {
+        std::vector<Aabb> voxels;
+        const float half = m_voxelSize * 0.5f;
+        // aabbVector - half, aabbVector + half
+        iterateSetVoxels([&voxels, half](const VoxelInfo& info) {
+            Aabb tmp{info.worldPos - half, info.worldPos + half};
+            voxels.push_back(tmp);
+        });
+
+        return voxels;
+    }
+
+    void readObjFile(const std::filesystem::path& path)
+    {
+
+        if (!std::filesystem::exists(path)) {
+            throw std::invalid_argument("Path does not exist!");
+        }
+        // tinyobj::ObjReaderConfig readerConfig;
+        // readerConfig.mtl_search_path = "./"; // Path to material files
+        tinyobj::ObjReader reader;
+
+        reader.ParseFromFile(path.string());
+
+        if (!reader.Valid()) {
+            throw std::runtime_error(std::format("Colud not get valid reader! Error message {}", reader.Error()));
+        }
+
+        m_attribs = reader.GetAttrib();
+        m_shapes = reader.GetShapes();
+        m_materials = reader.GetMaterials();
+
+        const auto loadPos = [&](const tinyobj::index_t& idx) {
+            const size_t vi = static_cast<size_t>(idx.vertex_index);
+            const tinyobj::real_t vx = m_attribs.vertices[3 * vi];
+            const tinyobj::real_t vy = m_attribs.vertices[3 * vi + 1];
+            const tinyobj::real_t vz = m_attribs.vertices[3 * vi + 2];
+            return glm::vec3{vx, vy, vz};
+        };
+        for (size_t s = 0; s < m_shapes.size(); s++) {
+            const auto& mesh = m_shapes[s].mesh;
+            
+            for (size_t i = 0; i < mesh.indices.size(); i += 3) { // Changed condition
+                if (i + 2 >= mesh.indices.size()) break; // Safety check
+                const tinyobj::index_t i0 = mesh.indices[i];
+                const tinyobj::index_t i1 = mesh.indices[i + 1];
+                const tinyobj::index_t i2 = mesh.indices[i + 2];
+
+                const auto p0 = loadPos(i0);
+                const auto p1 = loadPos(i1);
+                const auto p2 = loadPos(i2);
+
+                addTriangle(p0, p1, p2);
+            }
+        }
     }
 };

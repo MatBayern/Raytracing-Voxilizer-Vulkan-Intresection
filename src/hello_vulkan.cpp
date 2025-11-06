@@ -27,7 +27,6 @@
 #include "voxelgridBool.hpp"
 #include "voxelgridVecEncoding.hpp"
 
-
 #include "hello_vulkan.h"
 #include "nvh/alignment.hpp"
 #include "nvh/cameramanipulator.hpp"
@@ -667,30 +666,42 @@ auto HelloVulkan::AABBToVkGeometryKHR()
 void HelloVulkan::createAABB(const std::string& path, float voxleSize)
 {
 
-    VoxelBuilder<VoxelGridAABBstruct> voxelBuilder{std::filesystem::path(path)};
-    const auto startVoxelGrid = std::chrono::high_resolution_clock::now();
-    VoxelGridAABBstruct vox = voxelBuilder.buildVoxelGrid(voxleSize);
-    const auto stopVoxelGrid = std::chrono::high_resolution_clock::now();
-    
-    const auto startAabb = std::chrono::high_resolution_clock::now();
-    const std::vector<Aabb> aabs = vox.getAabbs();
-    const auto stopAabb = std::chrono::high_resolution_clock::now();
-    
-    std::println("Voxel build took {}", std::chrono::duration_cast<std::chrono::milliseconds>(stopVoxelGrid - startVoxelGrid));
-    std::println("Aabb build took {}", std::chrono::duration_cast<std::chrono::milliseconds>(stopAabb - startAabb));
+    /* VoxelBuilder<VoxelGridAABBstruct> voxelBuilder{std::filesystem::path(path)};
+     const auto startVoxelGrid = std::chrono::high_resolution_clock::now();
+     VoxelGridAABBstruct vox = voxelBuilder.buildVoxelGrid(voxleSize);
+     const auto stopVoxelGrid = std::chrono::high_resolution_clock::now();
 
-    m_aabbsSize = static_cast<uint32_t>(aabs.size());
+     const auto startAabb = std::chrono::high_resolution_clock::now();
+     const std::vector<Aabb> aabbs = vox.getAabbs();
+     const auto stopAabb = std::chrono::high_resolution_clock::now();*/
+
+    SparseOctreeVoxelizer tree{255};
+
+    tree.readObjFile(std::filesystem::path(path));
+    const auto startVoxelGrid = std::chrono::high_resolution_clock::now();
+    tree.voxelize();
+    const auto stopVoxelGrid = std::chrono::high_resolution_clock::now();
+
+    const auto aabbs = tree.getAllSetVoxels();
+    MaterialObj mat{};
+    std::vector<MaterialObj> matObj{mat};
+    std::vector<int> idx(aabbs.size(), 0);
+
+    std::println("Voxel build took {}", std::chrono::duration_cast<std::chrono::milliseconds>(stopVoxelGrid - startVoxelGrid));
+    // std::println("Aabb build took {}", std::chrono::duration_cast<std::chrono::milliseconds>(stopAabb - startAabb));
+
+    m_aabbsSize = static_cast<uint32_t>(aabbs.size());
 
     // Creating all buffers
     using vkBU = VkBufferUsageFlagBits;
     nvvk::CommandPool genCmdBuf(m_device, m_graphicsQueueIndex);
     auto cmdBuf = genCmdBuf.createCommandBuffer();
 
-    m_AabbBuffer = m_alloc.createBuffer(cmdBuf, aabs,
+    m_AabbBuffer = m_alloc.createBuffer(cmdBuf, aabbs,
         VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
             | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR);
-    m_VoxelMatIndexBuffer = m_alloc.createBuffer(cmdBuf, vox.getMatIdx(), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT);
-    m_VoxelMatColorBuffer = m_alloc.createBuffer(cmdBuf, vox.getMatrials(), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT);
+    m_VoxelMatIndexBuffer = m_alloc.createBuffer(cmdBuf, matObj, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT);
+    m_VoxelMatColorBuffer = m_alloc.createBuffer(cmdBuf, idx, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT);
 
     genCmdBuf.submitAndWait(cmdBuf);
 
