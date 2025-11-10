@@ -26,6 +26,8 @@
 #include "voxelgridAABBstruct.hpp"
 #include "voxelgridBool.hpp"
 #include "voxelgridVecEncoding.hpp"
+//
+#include <octTree.hpp>
 
 #include "hello_vulkan.h"
 #include "nvh/alignment.hpp"
@@ -41,6 +43,7 @@
 
 // STD
 #include <chrono>
+#include <format>
 #include <print>
 
 extern std::vector<std::string> defaultSearchPaths;
@@ -666,28 +669,62 @@ auto HelloVulkan::AABBToVkGeometryKHR()
 void HelloVulkan::createAABB(const std::string& path, float voxleSize)
 {
 
-    /* VoxelBuilder<VoxelGridAABBstruct> voxelBuilder{std::filesystem::path(path)};
-     const auto startVoxelGrid = std::chrono::high_resolution_clock::now();
-     VoxelGridAABBstruct vox = voxelBuilder.buildVoxelGrid(voxleSize);
-     const auto stopVoxelGrid = std::chrono::high_resolution_clock::now();
-
-     const auto startAabb = std::chrono::high_resolution_clock::now();
-     const std::vector<Aabb> aabbs = vox.getAabbs();
-     const auto stopAabb = std::chrono::high_resolution_clock::now();*/
-
-    SparseOctreeVoxelizer tree{255};
-
-    tree.readObjFile(std::filesystem::path(path));
+    /*VoxelBuilder<VoxelGridBool> voxelBuilder{std::filesystem::path(path)};
     const auto startVoxelGrid = std::chrono::high_resolution_clock::now();
-    tree.voxelize();
+    VoxelGridBool vox = voxelBuilder.buildVoxelGrid(voxleSize);
     const auto stopVoxelGrid = std::chrono::high_resolution_clock::now();
 
-    const auto aabbs = tree.getAllSetVoxels();
-    MaterialObj mat{};
-    std::vector<MaterialObj> matObj{mat};
+    const auto startAabb = std::chrono::high_resolution_clock::now();
+    const std::vector<Aabb> aabbs = vox.getAabbs();
+    const auto stopAabb = std::chrono::high_resolution_clock::now();
+
+    std::vector<MaterialObj> matObj = vox.getMatrials();
+    std::vector<int> idx = vox.getMatIdx();*/
+
+    tinyobj::ObjReader reader;
+
+    reader.ParseFromFile(path);
+
+    const auto attribs = reader.GetAttrib();
+    auto shapes = reader.GetShapes();
+
+    const auto loadpos = [&](const tinyobj::index_t& idx) {
+        const size_t vi = static_cast<size_t>(idx.vertex_index);
+        const tinyobj::real_t vx = attribs.vertices[3 * vi];
+        const tinyobj::real_t vy = attribs.vertices[3 * vi + 1];
+        const tinyobj::real_t vz = attribs.vertices[3 * vi + 2];
+        return glm::vec3{vx, vy, vz};
+    };
+    std::vector<Triangle> tri;
+    tri.reserve(shapes.size());
+    for (size_t s = 0; s < shapes.size(); s++) {
+        const auto& mesh = shapes[s].mesh;
+
+        for (size_t i = 0; i < mesh.indices.size(); i += 3) { // changed condition
+            if (i + 2 >= mesh.indices.size()) break; // safety check
+
+            const tinyobj::index_t i0 = mesh.indices[i];
+            const tinyobj::index_t i1 = mesh.indices[i + 1];
+            const tinyobj::index_t i2 = mesh.indices[i + 2];
+
+            const auto p0 = loadpos(i0);
+            const auto p1 = loadpos(i1);
+            const auto p2 = loadpos(i2);
+
+            tri.emplace_back(p0, p1, p2);
+        }
+    }
+    shapes.clear();
+    OctTree tree(5, 128, 10.0f);
+    tri = fitToCube(tri, 10.0f);
+    tree.build(tri);
+
+    const auto aabbs = getAllSetVoxels(tree);
+    MaterialObj mat;
+    std::vector<MaterialObj> matobj{mat};
     std::vector<int> idx(aabbs.size(), 0);
 
-    std::println("Voxel build took {}", std::chrono::duration_cast<std::chrono::milliseconds>(stopVoxelGrid - startVoxelGrid));
+    // std::println("Voxel build took {}", std::chrono::duration_cast<std::chrono::milliseconds>(stopVoxelGrid - startVoxelGrid));
     // std::println("Aabb build took {}", std::chrono::duration_cast<std::chrono::milliseconds>(stopAabb - startAabb));
 
     m_aabbsSize = static_cast<uint32_t>(aabbs.size());
@@ -700,8 +737,8 @@ void HelloVulkan::createAABB(const std::string& path, float voxleSize)
     m_AabbBuffer = m_alloc.createBuffer(cmdBuf, aabbs,
         VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
             | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR);
-    m_VoxelMatIndexBuffer = m_alloc.createBuffer(cmdBuf, matObj, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT);
-    m_VoxelMatColorBuffer = m_alloc.createBuffer(cmdBuf, idx, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT);
+    m_VoxelMatIndexBuffer = m_alloc.createBuffer(cmdBuf, idx, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT); // For the index
+    m_VoxelMatColorBuffer = m_alloc.createBuffer(cmdBuf, matobj, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT); // For Matrials
 
     genCmdBuf.submitAndWait(cmdBuf);
 
