@@ -76,7 +76,7 @@ inline Aabb makeChildAabb(const Aabb& parent, int octant)
 //=========================================================
 // OCTREE (Morton-code, flat node array)
 //=========================================================
-class Octree
+class Octree final
 {
 public:
     using MortonCode = std::uint64_t;
