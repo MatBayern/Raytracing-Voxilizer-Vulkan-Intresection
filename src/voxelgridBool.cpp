@@ -36,10 +36,6 @@ std::vector<Aabb> VoxelGridBool::getAabbs() const noexcept
 
                 const glm::vec3 aabbVector = m_org + (gridCords + 0.5f) * m_voxelSize;
 
-                // const float xF = m_org.x + (gridCords.x + 0.5f) * m_voxelSize;
-                // const float yF = m_org.y + (gridCords.y + 0.5f) * m_voxelSize;
-                // const float zF = m_org.z + (gridCords.z + 0.5f) * m_voxelSize;
-
                 ret.emplace_back(aabbVector - half, aabbVector + half);
             } else {
                 break;

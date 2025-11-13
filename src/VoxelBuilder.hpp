@@ -384,25 +384,27 @@ public:
 
         for (size_t s = 0; s < m_shapes.size(); s++) {
             const auto& mesh = m_shapes[s].mesh;
-            const int materialId = m_shapes[s].mesh.material_ids[s];
-            MaterialObj material;
-            if (materialId > -1) {
-                const auto& materialToCopy = m_materials[materialId];
-                material.ior = materialToCopy.ior;
-                material.dissolve = materialToCopy.dissolve;
-                material.shininess = materialToCopy.shininess;
-                material.illum = materialToCopy.illum;
-                // VECS
-                material.ambient = {materialToCopy.ambient[0], materialToCopy.ambient[1], materialToCopy.ambient[2]};
-                material.diffuse = {materialToCopy.diffuse[0], materialToCopy.diffuse[1], materialToCopy.diffuse[2]};
-                material.specular = {materialToCopy.specular[0], materialToCopy.specular[1], materialToCopy.specular[2]};
-                material.transmittance = {materialToCopy.transmittance[0], materialToCopy.transmittance[1], materialToCopy.transmittance[2]};
-                material.emission = {materialToCopy.emission[0], materialToCopy.emission[1], materialToCopy.emission[2]};
-
-                // material.textureID = materialToCopy.;
-            }
-            for (size_t i = 0; i < mesh.indices.size(); i += 3) { // Changed condition
+            for (size_t i = 0; i < mesh.indices.size(); i += 3) {
+                
                 if (i + 2 >= mesh.indices.size()) break; // Safety check
+                
+                const int materialId = m_shapes[s].mesh.material_ids[s];
+                MaterialObj material;
+                if (materialId > -1) {
+                    const auto& materialToCopy = m_materials[materialId];
+                    material.ior = materialToCopy.ior;
+                    material.dissolve = materialToCopy.dissolve;
+                    material.shininess = materialToCopy.shininess;
+                    material.illum = materialToCopy.illum;
+                    // VECS
+                    material.ambient = {materialToCopy.ambient[0], materialToCopy.ambient[1], materialToCopy.ambient[2]};
+                    material.diffuse = {materialToCopy.diffuse[0], materialToCopy.diffuse[1], materialToCopy.diffuse[2]};
+                    material.specular = {materialToCopy.specular[0], materialToCopy.specular[1], materialToCopy.specular[2]};
+                    material.transmittance = {materialToCopy.transmittance[0], materialToCopy.transmittance[1], materialToCopy.transmittance[2]};
+                    material.emission = {materialToCopy.emission[0], materialToCopy.emission[1], materialToCopy.emission[2]};
+
+                    // material.textureID = materialToCopy.;
+                }
 
                 const tinyobj::index_t i0 = mesh.indices[i];
                 const tinyobj::index_t i1 = mesh.indices[i + 1];

@@ -109,11 +109,9 @@ public:
         if (x >= m_x || y >= m_y || z >= m_z) [[unlikely]] {
             throw std::runtime_error("Index out of bounds");
         }
-        const float worldX = m_org.x + (static_cast<float>(x) + 0.5f) * m_voxelSize;
-        const float worldY = m_org.y + (static_cast<float>(y) + 0.5f) * m_voxelSize;
-        const float worldZ = m_org.z + (static_cast<float>(z) + 0.5f) * m_voxelSize;
+        glm::vec3 posvec{x, y, z};
+        glm::vec3 ret = m_org + (posvec + 0.5f) * m_voxelSize;
 
-        vec3 ret = {worldX, worldY, worldZ}; // RVO
         return ret;
     }
 

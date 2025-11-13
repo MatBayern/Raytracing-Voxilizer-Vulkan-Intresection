@@ -669,64 +669,28 @@ auto HelloVulkan::AABBToVkGeometryKHR()
 void HelloVulkan::createAABB(const std::string& path, float voxleSize)
 {
 
-    /*VoxelBuilder<VoxelGridBool> voxelBuilder{std::filesystem::path(path)};
-    const auto startVoxelGrid = std::chrono::high_resolution_clock::now();
-    VoxelGridBool vox = voxelBuilder.buildVoxelGrid(voxleSize);
-    const auto stopVoxelGrid = std::chrono::high_resolution_clock::now();
+    // VoxelBuilder<VoxelGridBool> voxelBuilder{std::filesystem::path(path)};
+    // const auto startVoxelGrid = std::chrono::high_resolution_clock::now();
+    // VoxelGridBool vox = voxelBuilder.buildVoxelGrid(voxleSize);
+    // const auto stopVoxelGrid = std::chrono::high_resolution_clock::now();
 
-    const auto startAabb = std::chrono::high_resolution_clock::now();
-    const std::vector<Aabb> aabbs = vox.getAabbs();
-    const auto stopAabb = std::chrono::high_resolution_clock::now();
+    // const auto startAabb = std::chrono::high_resolution_clock::now();
+    // const std::vector<Aabb> aabbs = vox.getAabbs();
+    // const auto stopAabb = std::chrono::high_resolution_clock::now();
 
-    std::vector<MaterialObj> matObj = vox.getMatrials();
-    std::vector<int> idx = vox.getMatIdx();*/
-
-    tinyobj::ObjReader reader;
-
-    reader.ParseFromFile(path);
-
-    const auto attribs = reader.GetAttrib();
-    auto shapes = reader.GetShapes();
-
-    const auto loadpos = [&](const tinyobj::index_t& idx) {
-        const size_t vi = static_cast<size_t>(idx.vertex_index);
-        const tinyobj::real_t vx = attribs.vertices[3 * vi];
-        const tinyobj::real_t vy = attribs.vertices[3 * vi + 1];
-        const tinyobj::real_t vz = attribs.vertices[3 * vi + 2];
-        return glm::vec3{vx, vy, vz};
-    };
-    std::vector<Triangle> tri;
-    tri.reserve(shapes.size());
-    for (size_t s = 0; s < shapes.size(); s++) {
-        const auto& mesh = shapes[s].mesh;
-
-        for (size_t i = 0; i < mesh.indices.size(); i += 3) { // changed condition
-            if (i + 2 >= mesh.indices.size()) break; // safety check
-
-            const tinyobj::index_t i0 = mesh.indices[i];
-            const tinyobj::index_t i1 = mesh.indices[i + 1];
-            const tinyobj::index_t i2 = mesh.indices[i + 2];
-
-            const auto p0 = loadpos(i0);
-            const auto p1 = loadpos(i1);
-            const auto p2 = loadpos(i2);
-
-            tri.emplace_back(p0, p1, p2);
-        }
-    }
-    shapes.clear();
-    OctTree tree(5, 128, 10.0f);
-    tri = fitToCube(tri, 10.0f);
-    tree.build(tri);
-
-    const auto aabbs = getAllSetVoxels(tree);
-    MaterialObj mat;
-    std::vector<MaterialObj> matobj{mat};
-    std::vector<int> idx(aabbs.size(), 0);
+    // std::vector<MaterialObj> matobj = vox.getMatrials();
+    // std::vector<int> idx = vox.getMatIdx();
 
     // std::println("Voxel build took {}", std::chrono::duration_cast<std::chrono::milliseconds>(stopVoxelGrid - startVoxelGrid));
     // std::println("Aabb build took {}", std::chrono::duration_cast<std::chrono::milliseconds>(stopAabb - startAabb));
+    Octree tree{std::filesystem::path(path), voxleSize};
 
+    MaterialObj mat;
+    std::vector<MaterialObj> matobj{mat};
+   
+
+    const std::vector<Aabb> aabbs = tree.getAabbs();
+     std::vector<int> idx(aabbs.size(), 0);
     m_aabbsSize = static_cast<uint32_t>(aabbs.size());
 
     // Creating all buffers

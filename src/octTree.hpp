@@ -1,472 +1,575 @@
 #pragma once
 
-#include "obj_loader.h"
 #include "shaders/host_device.h"
+#include "tiny_obj_loader.h"
+#include "voxelgrid.hpp"
+#include "voxelgridAABBstruct.hpp"
 #include <glm/glm.hpp>
 
 // STD
 #include <algorithm>
+#include <array>
+#include <cassert>
 #include <cmath>
 #include <cstdint>
-#include <functional>
+#include <filesystem>
+#include <format>
 #include <limits>
-#include <unordered_map>
+#include <memory>
+#include <print>
 #include <vector>
 
-struct Triangle
+//=========================================================
+// Basic AABB utilities for your Aabb struct
+//=========================================================
+inline glm::vec3 aabbCenter(const Aabb& b)
 {
-    glm::vec3 v0, v1, v2;
-    glm::vec3 normal;
-    Triangle(glm::vec3 v0, glm::vec3 v1, glm::vec3 v2) : v0(v0), v1(v1), v2(v2), normal(glm::normalize(glm::cross(v1 - v0, v2 - v0)))
-    {
-    }
-};
+    return (b.minimum + b.maximum) * 0.5f;
+}
 
-struct OctreeNode
+inline glm::vec3 aabbHalfSize(const Aabb& b)
 {
-    uint32_t level = 0;
-    uint64_t mortonPath = 0; // packed (z,y,x) grid key (21 bits each)
-    int parent = -1;
-    int firstChild = -1;
-    int xPosNeighbor = -1;
-    int xNegNeighbor = -1;
-    uint64_t voxelSubgrid = 0; // 4x4x4 bits
-    bool insideFlag = false;
-    bool boundaryFlag = false;
-};
+    return (b.maximum - b.minimum) * 0.5f;
+}
 
-class OctTree
+inline bool aabbContains(const Aabb& b, const glm::vec3& p)
+{
+    return glm::all(glm::lessThanEqual(b.minimum, p)) && glm::all(glm::lessThanEqual(p, b.maximum));
+}
+
+inline bool aabbIntersects(const Aabb& a, const Aabb& b)
+{
+    return (a.minimum.x <= b.maximum.x && a.maximum.x >= b.minimum.x) && (a.minimum.y <= b.maximum.y && a.maximum.y >= b.minimum.y) && (a.minimum.z <= b.maximum.z && a.maximum.z >= b.minimum.z);
+}
+
+// Create a sub AABB from parent + octant index (0..7)
+inline Aabb makeChildAabb(const Aabb& parent, int octant)
+{
+    glm::vec3 center = aabbCenter(parent);
+    glm::vec3 min = parent.minimum;
+    glm::vec3 max = parent.maximum;
+
+    glm::vec3 cmin = min;
+    glm::vec3 cmax = max;
+
+    // X
+    if (octant & 1)
+        cmin.x = center.x;
+    else
+        cmax.x = center.x;
+
+    // Y
+    if (octant & 2)
+        cmin.y = center.y;
+    else
+        cmax.y = center.y;
+
+    // Z
+    if (octant & 4)
+        cmin.z = center.z;
+    else
+        cmax.z = center.z;
+
+    return {cmin, cmax};
+}
+
+//=========================================================
+// Morton code utilities
+//=========================================================
+using MortonCode = std::uint64_t;
+
+// Expands a 21-bit integer into 63 bits by inserting 2 zeros between each bit.
+inline MortonCode expandBits(std::uint32_t v)
+{
+    MortonCode x = v & 0x1fffffu; // 21 bits
+    x = (x | (x << 32)) & 0x1f00000000ffffULL;
+    x = (x | (x << 16)) & 0x1f0000ff0000ffULL;
+    x = (x | (x << 8)) & 0x100f00f00f00f00FULL;
+    x = (x | (x << 4)) & 0x10c30c30c30c30C3ULL;
+    x = (x | (x << 2)) & 0x1249249249249249ULL;
+    return x;
+}
+
+inline MortonCode morton3D(std::uint32_t x, std::uint32_t y, std::uint32_t z)
+{
+    MortonCode xx = expandBits(x);
+    MortonCode yy = expandBits(y) << 1;
+    MortonCode zz = expandBits(z) << 2;
+    return xx | yy | zz;
+}
+
+//=========================================================
+// OCTREE (Morton-code, flat node array)
+//=========================================================
+class Octree
 {
 public:
-    uint32_t maxLevel = 3;
-    float worldSize = 1.0f;
-    uint32_t level0Grid = 64;
-
-    std::vector<std::vector<OctreeNode>> nodesPerLevel;
-    std::vector<std::unordered_map<uint64_t, int>> idxOf;
-
-    OctTree(uint32_t maxLevel_, uint32_t level0Grid_, float worldSize_)
-        : maxLevel(maxLevel_), worldSize(worldSize_), level0Grid(level0Grid_)
+    struct Item
     {
-        if (level0Grid % 4 != 0) level0Grid += (4 - (level0Grid % 4));
-        nodesPerLevel.resize(maxLevel + 1);
-        idxOf.resize(maxLevel + 1);
-    }
-
-    void build(const std::vector<Triangle>& tris)
-    {
-        generateActiveLeaves(tris);
-        completeBandsLevel0();
-        buildUpperLevels();
-        linkXNeighborsAllLevels();
-        solidVoxelize(tris);
-        propagateInsideOutside();
-    }
-
-    inline float levelVoxelSize(uint32_t level) const
-    {
-        uint32_t cells = level0Grid >> level;
-        return worldSize / float(cells);
-    }
+        glm::vec3 position; // world-space position (voxel center)
+        MortonCode morton; // morton code in [0, 2^(3*maxDepth) )
+    };
 
 private:
-    static inline bool triBoxOverlapSAT(const Triangle& tri, const glm::vec3& boxMin, float boxSize)
+    struct Node
     {
-        const glm::vec3 h(boxSize * 0.5f);
-        const glm::vec3 c = boxMin + h;
-        glm::vec3 p0 = tri.v0 - c, p1 = tri.v1 - c, p2 = tri.v2 - c;
-        glm::vec3 e0 = p1 - p0, e1 = p2 - p1, e2 = p0 - p2;
+        Aabb bounds{};
+        std::array<std::uint32_t, 8> children{}; // indices into m_nodes, or INVALID
+        std::uint32_t start = 0; // start index into m_items
+        std::uint32_t count = 0; // number of items in this subtree
+        std::uint8_t depth = 0; // tree depth (0 = root)
 
-        auto aabbSep = [&](const glm::vec3& H) -> bool {
-            auto mn = [](float a, float b, float c) { return std::min(a, std::min(b, c)); };
-            auto mx = [](float a, float b, float c) { return std::max(a, std::max(b, c)); };
-            if (mn(p0.x, p1.x, p2.x) > H.x || mx(p0.x, p1.x, p2.x) < -H.x) return true;
-            if (mn(p0.y, p1.y, p2.y) > H.y || mx(p0.y, p1.y, p2.y) < -H.y) return true;
-            if (mn(p0.z, p1.z, p2.z) > H.z || mx(p0.z, p1.z, p2.z) < -H.z) return true;
-            return false;
-        };
-        if (aabbSep(h)) return false;
+        bool isLeaf() const
+        {
+            for (auto c : children) {
+                if (c != INVALID_INDEX) return false;
+            }
+            return true;
+        }
+    };
 
-        auto sep = [&](const glm::vec3& L, float R) -> bool {
-            float a = glm::dot(p0, L), b = glm::dot(p1, L), c = glm::dot(p2, L);
-            float mn = std::min(a, std::min(b, c)), mx = std::max(a, std::max(b, c));
-            return (mn > R) || (mx < -R);
-        };
-        auto edgeAxes = [&](const glm::vec3& e) -> bool {
-            glm::vec3 Lx(0, -e.z, e.y);
-            if (sep(Lx, h.y * std::fabs(Lx.y) + h.z * std::fabs(Lx.z))) return true;
-            glm::vec3 Ly(e.z, 0, -e.x);
-            if (sep(Ly, h.x * std::fabs(Ly.x) + h.z * std::fabs(Ly.z))) return true;
-            glm::vec3 Lz(-e.y, e.x, 0);
-            if (sep(Lz, h.x * std::fabs(Lz.x) + h.y * std::fabs(Lz.y))) return true;
-            return false;
-        };
-        if (edgeAxes(e0) || edgeAxes(e1) || edgeAxes(e2)) return false;
+    static constexpr std::uint32_t INVALID_INDEX = std::numeric_limits<std::uint32_t>::max();
 
-        glm::vec3 n = glm::cross(e0, e1);
-        glm::vec3 an = glm::abs(n);
-        float r = h.x * an.x + h.y * an.y + h.z * an.z;
-        float s = glm::dot(n, p0);
-        return std::fabs(s) <= r;
+    // Tree data
+    std::vector<Item> m_items; // sorted by morton after build
+    std::vector<Node> m_nodes; // flat array, node 0 = root
+
+    Aabb m_rootBounds{};
+    size_t m_maxItems;
+    size_t m_maxDepth;
+
+    glm::vec3 m_halfVoxelSize{0.0f};
+    // OBJ data
+    std::vector<tinyobj::shape_t> m_shapes;
+    tinyobj::attrib_t m_attribs;
+
+    // AABB vector (for debug / visualization)
+
+    //=====================================================
+    // Helpers
+    //=====================================================
+    void readObjFile(const std::filesystem::path& path)
+    {
+        if (!std::filesystem::exists(path)) {
+            throw std::invalid_argument("Path does not exist!");
+        }
+
+        tinyobj::ObjReader reader;
+        reader.ParseFromFile(path.string());
+
+        if (!reader.Valid()) {
+            throw std::runtime_error(std::format("Could not get valid reader! Error message {}", reader.Error()));
+        }
+
+        m_attribs = reader.GetAttrib();
+        m_shapes = reader.GetShapes();
     }
 
-    void generateActiveLeaves(const std::vector<Triangle>& tris)
+    // Map a world-space position into [0, 2^maxDepth-1]^3 and then to a Morton code
+    MortonCode encodePositionToMorton(const glm::vec3& pos) const
     {
-        nodesPerLevel.assign(maxLevel + 1, {});
-        idxOf.assign(maxLevel + 1, {});
+        glm::vec3 size = m_rootBounds.maximum - m_rootBounds.minimum;
+        // Avoid division by zero; clamp degenerate axes
+        if (size.x == 0.0f) size.x = 1.0f;
+        if (size.y == 0.0f) size.y = 1.0f;
+        if (size.z == 0.0f) size.z = 1.0f;
 
-        const float h0 = levelVoxelSize(0);
-        const uint32_t N0 = level0Grid;
+        glm::vec3 rel = (pos - m_rootBounds.minimum) / size;
 
-        std::unordered_map<uint64_t, int> created;
+        const float gridMaxF = static_cast<float>((1u << m_maxDepth) - 1u);
 
-        auto clampi = [](int v, int lo, int hi) -> int { return v < lo ? lo : (v > hi ? hi : v); };
+        auto clamp01 = [](float v) {
+            return std::max(0.0f, std::min(1.0f, v));
+        };
 
-        for (const Triangle& t : tris) {
-            glm::vec3 tmin(std::min(t.v0.x, std::min(t.v1.x, t.v2.x)),
-                std::min(t.v0.y, std::min(t.v1.y, t.v2.y)),
-                std::min(t.v0.z, std::min(t.v1.z, t.v2.z)));
-            glm::vec3 tmax(std::max(t.v0.x, std::max(t.v1.x, t.v2.x)),
-                std::max(t.v0.y, std::max(t.v1.y, t.v2.y)),
-                std::max(t.v0.z, std::max(t.v1.z, t.v2.z)));
+        std::uint32_t ix = static_cast<std::uint32_t>(clamp01(rel.x) * gridMaxF + 0.5f);
+        std::uint32_t iy = static_cast<std::uint32_t>(clamp01(rel.y) * gridMaxF + 0.5f);
+        std::uint32_t iz = static_cast<std::uint32_t>(clamp01(rel.z) * gridMaxF + 0.5f);
 
-            int minX = clampi((int)std::floor(tmin.x / h0), 0, (int)N0 - 1);
-            int minY = clampi((int)std::floor(tmin.y / h0), 0, (int)N0 - 1);
-            int minZ = clampi((int)std::floor(tmin.z / h0), 0, (int)N0 - 1);
-            int maxX = clampi((int)std::floor(tmax.x / h0), 0, (int)N0 - 1);
-            int maxY = clampi((int)std::floor(tmax.y / h0), 0, (int)N0 - 1);
-            int maxZ = clampi((int)std::floor(tmax.z / h0), 0, (int)N0 - 1);
+        return morton3D(ix, iy, iz);
+    }
 
-            for (int z = minZ; z <= maxZ; ++z)
-                for (int y = minY; y <= maxY; ++y)
-                    for (int x = minX; x <= maxX; ++x) {
-                        glm::vec3 bmin(x * h0, y * h0, z * h0);
-                        if (!triBoxOverlapSAT(t, bmin, h0)) continue;
-                        uint64_t key = ((uint64_t)z << 42) | ((uint64_t)y << 21) | (uint64_t)x;
-                        if (!created.count(key)) {
-                            OctreeNode node;
-                            node.level = 0;
-                            node.mortonPath = key;
-                            int idx = (int)nodesPerLevel[0].size();
-                            nodesPerLevel[0].push_back(node);
-                            created[key] = idx;
-                            idxOf[0][key] = idx;
+    // Recursive build of nodes over sorted m_items
+    std::uint32_t buildNodeRecursive(std::uint32_t begin, std::uint32_t end, const Aabb& bounds, std::uint8_t depth)
+    {
+        const std::uint32_t nodeIndex = static_cast<std::uint32_t>(m_nodes.size());
+        m_nodes.emplace_back();
+        Node& node = m_nodes.back();
+
+        node.bounds = bounds;
+        node.start = begin;
+        node.count = end - begin;
+        node.depth = depth;
+        node.children.fill(INVALID_INDEX);
+
+        // Leaf condition: reached max depth or few enough items
+        if (depth >= m_maxDepth || node.count <= m_maxItems) {
+            return nodeIndex;
+        }
+
+        // Partition items by child octant based on Morton bits
+        const std::uint32_t totalDepth = static_cast<std::uint32_t>(m_maxDepth);
+        const std::uint32_t levelShift = 3u * (totalDepth - 1u - depth);
+
+        std::uint32_t cur = begin;
+        for (int child = 0; child < 8; ++child) {
+            if (cur >= end)
+                break;
+
+            const std::uint32_t childBegin = cur;
+
+            while (cur < end) {
+                MortonCode code = m_items[cur].morton;
+                int octant = static_cast<int>((code >> levelShift) & 0x7u);
+                if (octant != child) break;
+                ++cur;
+            }
+
+            if (childBegin == cur)
+                continue; // no items in this octant
+
+            Aabb childBounds = makeChildAabb(bounds, child);
+            std::uint32_t childIndex = buildNodeRecursive(childBegin, cur, childBounds, depth + 1);
+            node.children[child] = childIndex;
+        }
+
+        return nodeIndex;
+    }
+
+    void buildTree()
+    {
+
+        // Sort by morton code
+        std::sort(m_items.begin(), m_items.end(),
+            [](const Item& a, const Item& b) { return a.morton < b.morton; });
+
+        m_nodes.clear();
+        m_nodes.reserve(m_items.size() * 2); // heuristic
+
+        buildNodeRecursive(0, static_cast<std::uint32_t>(m_items.size()), m_rootBounds, 0);
+    }
+
+    void queryRecursive(std::uint32_t nodeIndex, const Aabb& range, std::vector<Item>& out) const
+    {
+        const Node& node = m_nodes[nodeIndex];
+
+        if (!aabbIntersects(node.bounds, range))
+            return;
+
+        if (node.isLeaf()) {
+            const std::uint32_t end = node.start + node.count;
+            for (std::uint32_t i = node.start; i < end; ++i) {
+                const Item& it = m_items[i];
+                if (aabbContains(range, it.position))
+                    out.push_back(it);
+            }
+        } else {
+            for (int c = 0; c < 8; ++c) {
+                std::uint32_t ci = node.children[c];
+                if (ci != INVALID_INDEX)
+                    queryRecursive(ci, range, out);
+            }
+        }
+    }
+
+    void traverseNodesRawRecursive(std::uint32_t nodeIndex, std::vector<Aabb>* out) const
+    {
+        const Node& node = m_nodes[nodeIndex];
+
+        if (node.isLeaf()) {
+            const std::uint32_t end = node.start + node.count;
+            for (std::uint32_t i = node.start; i < end; ++i) {
+                const Item& it = m_items[i];
+
+                out->emplace_back(it.position - m_halfVoxelSize, it.position + m_halfVoxelSize); // min max
+            }
+        } else {
+            for (int c = 0; c < 8; ++c) {
+                std::uint32_t ci = node.children[c];
+                if (ci != INVALID_INDEX)
+                    traverseNodesRawRecursive(ci, out);
+            }
+        }
+    }
+
+    bool triBoxOverlapSchwarzSeidel(const glm::vec3& c, const glm::vec3& h, const glm::vec3& v0, const glm::vec3& v1, const glm::vec3& v2)
+    {
+        // Translate triangle to box-centered coordinates
+        glm::vec3 p0 = v0 - c;
+        glm::vec3 p1 = v1 - c;
+        glm::vec3 p2 = v2 - c;
+
+        // Triangle edges
+        const glm::vec3 e0 = p1 - p0;
+        const glm::vec3 e1 = p2 - p1;
+        const glm::vec3 e2 = p0 - p2;
+
+        // 1) AABB axis tests (x,y,z)
+
+        float minx = fminf(p0.x, fminf(p1.x, p2.x));
+        float maxx = fmaxf(p0.x, fmaxf(p1.x, p2.x));
+        if (minx > h.x || maxx < -h.x) return false;
+
+        float miny = fminf(p0.y, fminf(p1.y, p2.y));
+        float maxy = fmaxf(p0.y, fmaxf(p1.y, p2.y));
+        if (miny > h.y || maxy < -h.y) return false;
+
+        float minz = fminf(p0.z, fminf(p1.z, p2.z));
+        float maxz = fmaxf(p0.z, fmaxf(p1.z, p2.z));
+        if (minz > h.z || maxz < -h.z) return false;
+
+        // Precompute |edges|
+        const glm::vec3 ae0 = glm::abs(e0);
+        const glm::vec3 ae1 = glm::abs(e1);
+        const glm::vec3 ae2 = glm::abs(e2);
+
+        const auto sepAxis = [&](float px0, float px1, float px2, float ra) -> bool {
+            const float mn = fminf(px0, fminf(px1, px2));
+            const float mx = fmaxf(px0, fmaxf(px1, px2));
+            return (mn > ra) || (mx < -ra);
+        };
+
+        {
+            float p0d = -p0.z * e0.y + p0.y * e0.z;
+            float p1d = -p1.z * e0.y + p1.y * e0.z;
+            float p2d = -p2.z * e0.y + p2.y * e0.z;
+            float R = h.y * ae0.z + h.z * ae0.y;
+            if (sepAxis(p0d, p1d, p2d, R)) return false;
+
+            p0d = p0.x * e0.z - p0.z * e0.x;
+            p1d = p1.x * e0.z - p1.z * e0.x;
+            p2d = p2.x * e0.z - p2.z * e0.x;
+            R = h.x * ae0.z + h.z * ae0.x;
+            if (sepAxis(p0d, p1d, p2d, R)) return false;
+
+            p0d = -p0.y * e0.x + p0.x * e0.y;
+            p1d = -p1.y * e0.x + p1.x * e0.y;
+            p2d = -p2.y * e0.x + p2.x * e0.y;
+            R = h.x * ae0.y + h.y * ae0.x;
+            if (sepAxis(p0d, p1d, p2d, R)) return false;
+        }
+        {
+            float p0d = -p0.z * e1.y + p0.y * e1.z;
+            float p1d = -p1.z * e1.y + p1.y * e1.z;
+            float p2d = -p2.z * e1.y + p2.y * e1.z;
+            float R = h.y * ae1.z + h.z * ae1.y;
+            if (sepAxis(p0d, p1d, p2d, R)) return false;
+
+            p0d = p0.x * e1.z - p0.z * e1.x;
+            p1d = p1.x * e1.z - p1.z * e1.x;
+            p2d = p2.x * e1.z - p2.z * e1.x;
+            R = h.x * ae1.z + h.z * ae1.x;
+            if (sepAxis(p0d, p1d, p2d, R)) return false;
+
+            p0d = -p0.y * e1.x + p0.x * e1.y;
+            p1d = -p1.y * e1.x + p1.x * e1.y;
+            p2d = -p2.y * e1.x + p2.x * e1.y;
+            R = h.x * ae1.y + h.y * ae1.x;
+            if (sepAxis(p0d, p1d, p2d, R)) return false;
+        }
+        {
+            float p0d = -p0.z * e2.y + p0.y * e2.z;
+            float p1d = -p1.z * e2.y + p1.y * e2.z;
+            float p2d = -p2.z * e2.y + p2.y * e2.z;
+            float R = h.y * ae2.z + h.z * ae2.y;
+            if (sepAxis(p0d, p1d, p2d, R)) return false;
+
+            p0d = p0.x * e2.z - p0.z * e2.x;
+            p1d = p1.x * e2.z - p1.z * e2.x;
+            p2d = p2.x * e2.z - p2.z * e2.x;
+            R = h.x * ae2.z + h.z * ae2.x;
+            if (sepAxis(p0d, p1d, p2d, R)) return false;
+
+            p0d = -p0.y * e2.x + p0.x * e2.y;
+            p1d = -p1.y * e2.x + p1.x * e2.y;
+            p2d = -p2.y * e2.x + p2.x * e2.y;
+            R = h.x * ae2.y + h.y * ae2.x;
+            if (sepAxis(p0d, p1d, p2d, R)) return false;
+        }
+
+        // Triangle plane vs box
+        const glm::vec3 n = glm::cross(e0, e1);
+        const glm::vec3 an = glm::abs(n);
+        const float r = h.x * an.x + h.y * an.y + h.z * an.z;
+        const float s = n.x * p0.x + n.y * p0.y + n.z * p0.z; // signed distance
+        if (fabsf(s) > r) return false;
+
+        return true;
+    }
+
+public:
+    explicit Octree(const std::filesystem::path& path,
+        float voxSize,
+        size_t maxItemsPerLeaf = 8,
+        size_t maxDepth = 9)
+        : m_maxItems(maxItemsPerLeaf), m_maxDepth(maxDepth)
+    {
+        // We support up to 21 levels (Morton 21 bits per axis)
+        if (m_maxDepth > 21)
+            m_maxDepth = 21;
+
+        readObjFile(path);
+        m_rootBounds = computeBboxFromAttrib(m_attribs);
+        buildVoxelGrid(voxSize);
+    }
+
+    std::vector<Aabb> getAabbs() const noexcept
+    {
+        std::vector<Aabb> ret;
+        traverseNodesRawRecursive(0, &ret);
+        return ret;
+    }
+
+    Octree(const Octree&) = delete;
+    Octree& operator=(const Octree&) = delete;
+    Octree(Octree&&) noexcept = default;
+    Octree& operator=(Octree&&) noexcept = default;
+
+private:
+    // Insert a point (voxel center) into the octree
+    bool insert(const glm::vec3& pos)
+    {
+        if (!aabbContains(m_rootBounds, pos))
+            return false;
+
+        Item i{};
+        i.position = pos;
+        i.morton = encodePositionToMorton(pos);
+        m_items.push_back(i);
+
+        return true;
+    }
+
+    // Query items inside range
+    void query(const Aabb& range, std::vector<Item>& out)
+    {
+        buildTree();
+        if (m_nodes.empty())
+            return;
+
+        queryRecursive(0, range, out);
+    }
+
+    std::vector<Item> query(const Aabb& range)
+    {
+        std::vector<Item> result;
+        query(range, result);
+        return result;
+    }
+
+    Aabb computeBboxFromAttrib(const tinyobj::attrib_t& attrib) const noexcept
+    {
+        Aabb bb{};
+        bb.minimum = {
+            std::numeric_limits<float>::infinity(),
+            std::numeric_limits<float>::infinity(),
+            std::numeric_limits<float>::infinity()};
+        bb.maximum = {
+            -std::numeric_limits<float>::infinity(),
+            -std::numeric_limits<float>::infinity(),
+            -std::numeric_limits<float>::infinity()};
+
+        const auto& v = attrib.vertices;
+        for (size_t i = 0; i + 2 < v.size(); i += 3) {
+            const float x = v[i];
+            const float y = v[i + 1];
+            const float z = v[i + 2];
+            bb.minimum.x = std::min(bb.minimum.x, x);
+            bb.maximum.x = std::max(bb.maximum.x, x);
+            bb.minimum.y = std::min(bb.minimum.y, y);
+            bb.maximum.y = std::max(bb.maximum.y, y);
+            bb.minimum.z = std::min(bb.minimum.z, z);
+            bb.maximum.z = std::max(bb.maximum.z, z);
+        }
+
+        return bb;
+    }
+    // Build voxel grid and fill octree with voxel centers (Morton-coded)
+    void buildVoxelGrid(float voxelSize)
+    {
+        const auto bb = computeBboxFromAttrib(m_attribs);
+        m_rootBounds = bb;
+        const size_t width = static_cast<size_t>(std::ceil((bb.maximum.x - bb.minimum.x) / voxelSize));
+        const size_t height = static_cast<size_t>(std::ceil((bb.maximum.y - bb.minimum.y) / voxelSize));
+        const size_t depth = static_cast<size_t>(std::ceil((bb.maximum.z - bb.minimum.z) / voxelSize));
+
+        std::println("Grid dimensions: {}x{}x{}", width, height, depth);
+        std::println("Voxel size: {}", voxelSize);
+
+        const auto getCorrds = [voxelSize, &bb](size_t x, size_t y, size_t z) -> glm::vec3 {
+            glm::vec3 posvec{static_cast<float>(x),
+                static_cast<float>(y),
+                static_cast<float>(z)};
+            glm::vec3 ret = bb.minimum + (posvec + 0.5f) * voxelSize;
+            return ret;
+        };
+
+        const auto loadPos = [&](const tinyobj::index_t& idx) -> glm::vec3 {
+            const size_t vi = static_cast<size_t>(idx.vertex_index);
+            const tinyobj::real_t vx = m_attribs.vertices[3 * vi];
+            const tinyobj::real_t vy = m_attribs.vertices[3 * vi + 1];
+            const tinyobj::real_t vz = m_attribs.vertices[3 * vi + 2];
+            return glm::vec3{vx, vy, vz};
+        };
+
+        size_t triangleCount = 0;
+
+        const glm::vec3 halfVoxelSize = {voxelSize * 0.5f,
+            voxelSize * 0.5f,
+            voxelSize * 0.5f};
+        m_halfVoxelSize = halfVoxelSize;
+
+        for (size_t s = 0; s < m_shapes.size(); s++) {
+            const auto& mesh = m_shapes[s].mesh;
+
+            for (size_t i = 0; i < mesh.indices.size(); i += 3) {
+                if (i + 2 >= mesh.indices.size()) break; // Safety check
+
+                const tinyobj::index_t i0 = mesh.indices[i];
+                const tinyobj::index_t i1 = mesh.indices[i + 1];
+                const tinyobj::index_t i2 = mesh.indices[i + 2];
+
+                const auto p0 = loadPos(i0);
+                const auto p1 = loadPos(i1);
+                const auto p2 = loadPos(i2);
+
+                const glm::vec3 triMin = glm::min(p0, glm::min(p1, p2));
+                const glm::vec3 triMax = glm::max(p0, glm::max(p1, p2));
+
+                const int xStart = std::max(0, static_cast<int>((triMin.x - bb.minimum.x) / voxelSize));
+                const int yStart = std::max(0, static_cast<int>((triMin.y - bb.minimum.y) / voxelSize));
+                const int zStart = std::max(0, static_cast<int>((triMin.z - bb.minimum.z) / voxelSize));
+
+                const int xEnd = std::min(static_cast<int>(width),
+                    static_cast<int>((triMax.x - bb.minimum.x) / voxelSize) + 2);
+                const int yEnd = std::min(static_cast<int>(height),
+                    static_cast<int>((triMax.y - bb.minimum.y) / voxelSize) + 2);
+                const int zEnd = std::min(static_cast<int>(depth),
+                    static_cast<int>((triMax.z - bb.minimum.z) / voxelSize) + 2);
+
+                for (int z = zStart; z < zEnd; z++) {
+                    for (int y = yStart; y < yEnd; y++) {
+                        for (int x = xStart; x < xEnd; x++) {
+                            glm::vec3 center = getCorrds(static_cast<size_t>(x),
+                                static_cast<size_t>(y),
+                                static_cast<size_t>(z));
+                            if (triBoxOverlapSchwarzSeidel(center, halfVoxelSize, p0, p1, p2)) {
+                                insert(center);
+                            }
                         }
                     }
-        }
-    }
-
-    void completeBandsLevel0()
-    {
-        if (nodesPerLevel.empty() || nodesPerLevel[0].empty()) return;
-        struct Range
-        {
-            uint32_t minx, maxx;
-            bool inited = false;
-        };
-        std::unordered_map<uint64_t, Range> bands;
-        bands.reserve(nodesPerLevel[0].size() * 2);
-
-        for (auto& leaf : nodesPerLevel[0]) {
-            uint32_t x = (uint32_t)(leaf.mortonPath & ((1u << 21) - 1));
-            uint32_t y = (uint32_t)((leaf.mortonPath >> 21) & ((1u << 21) - 1));
-            uint32_t z = (uint32_t)((leaf.mortonPath >> 42) & ((1u << 21) - 1));
-            uint64_t yz = ((uint64_t)z << 21) | (uint64_t)y;
-            auto& r = bands[yz];
-            if (!r.inited) {
-                r.minx = r.maxx = x;
-                r.inited = true;
-            } else {
-                r.minx = std::min(r.minx, x);
-                r.maxx = std::max(r.maxx, x);
-            }
-        }
-        auto& L0 = nodesPerLevel[0];
-        auto& map = idxOf[0];
-        for (auto& kv : bands) {
-            uint64_t yz = kv.first;
-            auto r = kv.second;
-            if (!r.inited) continue;
-            uint32_t y = (uint32_t)(yz & ((1u << 21) - 1));
-            uint32_t z = (uint32_t)(yz >> 21);
-            for (uint32_t x = r.minx; x <= r.maxx; ++x) {
-                uint64_t key = ((uint64_t)z << 42) | ((uint64_t)y << 21) | x;
-                if (map.find(key) != map.end()) continue;
-                OctreeNode e;
-                e.level = 0;
-                e.mortonPath = key;
-                int idx = (int)L0.size();
-                L0.push_back(e);
-                map[key] = idx;
-            }
-        }
-    }
-
-    void buildUpperLevels()
-    {
-        for (uint32_t L = 1; L <= maxLevel; ++L) {
-            auto& cur = nodesPerLevel[L - 1];
-            auto& nxt = nodesPerLevel[L];
-            auto& mapNxt = idxOf[L];
-            std::unordered_map<uint64_t, int> parentIndex;
-            parentIndex.reserve(cur.size());
-            for (int ci = 0; ci < (int)cur.size(); ++ci) {
-                auto key = cur[ci].mortonPath;
-                uint32_t x = (uint32_t)(key & ((1u << 21) - 1));
-                uint32_t y = (uint32_t)((key >> 21) & ((1u << 21) - 1));
-                uint32_t z = (uint32_t)((key >> 42) & ((1u << 21) - 1));
-                uint64_t pkey = ((uint64_t)(z >> 1) << 42) | ((uint64_t)(y >> 1) << 21) | (uint64_t)(x >> 1);
-                int pidx;
-                auto pit = parentIndex.find(pkey);
-                if (pit == parentIndex.end()) {
-                    OctreeNode p;
-                    p.level = L;
-                    p.mortonPath = pkey;
-                    pidx = (int)nxt.size();
-                    nxt.push_back(p);
-                    parentIndex[pkey] = pidx;
-                    mapNxt[pkey] = pidx;
-                } else
-                    pidx = pit->second;
-                cur[ci].parent = pidx;
-            }
-            auto& mapCur = idxOf[L - 1];
-            mapCur.clear();
-            for (int i = 0; i < (int)cur.size(); ++i)
-                mapCur[cur[i].mortonPath] = i;
-        }
-    }
-
-    void linkXNeighborsAllLevels()
-    {
-        for (uint32_t L = 0; L <= maxLevel; ++L) {
-            auto& vec = nodesPerLevel[L];
-            auto& map = idxOf[L];
-            for (int i = 0; i < (int)vec.size(); ++i) {
-                auto key = vec[i].mortonPath;
-                uint32_t x = (uint32_t)(key & ((1u << 21) - 1));
-                uint32_t y = (uint32_t)((key >> 21) & ((1u << 21) - 1));
-                uint32_t z = (uint32_t)((key >> 42) & ((1u << 21) - 1));
-                uint32_t step = (1u << L);
-                uint32_t xn = x ^ step;
-                if ((x & ~(step * 2u - 1u)) == (xn & ~(step * 2u - 1u))) {
-                    uint64_t nkey = ((uint64_t)z << 42) | ((uint64_t)y << 21) | xn;
-                    auto it = map.find(nkey);
-                    if (it != map.end()) {
-                        vec[i].xPosNeighbor = it->second;
-                        nodesPerLevel[L][it->second].xNegNeighbor = i;
-                    }
                 }
-            }
-        }
-    }
 
-    void solidVoxelize(const std::vector<Triangle>& tris)
-    {
-        if (nodesPerLevel[0].empty()) return;
-        const float h = levelVoxelSize(0);
-        for (const Triangle& t : tris) {
-            glm::vec3 n = t.normal, an = glm::abs(n);
-            int axis = 0;
-            if (an.y > an.x && an.y >= an.z)
-                axis = 1;
-            else if (an.z > an.x && an.z >= an.y)
-                axis = 2;
-            float d = -glm::dot(n, t.v0);
-            for (auto& leaf : nodesPerLevel[0]) {
-                uint32_t x = (uint32_t)(leaf.mortonPath & ((1u << 21) - 1));
-                uint32_t y = (uint32_t)((leaf.mortonPath >> 21) & ((1u << 21) - 1));
-                uint32_t z = (uint32_t)((leaf.mortonPath >> 42) & ((1u << 21) - 1));
-                glm::vec3 bbmin(x * h, y * h, z * h), bbmax = bbmin + glm::vec3(h);
-                if (!triBoxOverlapSAT(t, bbmin, h)) continue;
-                float ofs = h * 0.25f;
-                for (int lu = 0; lu < 4; ++lu)
-                    for (int lv = 0; lv < 4; ++lv) {
-                        if (axis == 0) {
-                            if (std::abs(n.x) < 1e-12f) continue;
-                            float y0 = bbmin.y + (lv + 0.5f) * ofs, z0 = bbmin.z + (lu + 0.5f) * ofs;
-                            float x0 = -(n.y * y0 + n.z * z0 + d) / n.x;
-                            if (x0 >= bbmin.x && x0 < bbmax.x) {
-                                int lx = (int)std::floor((x0 - bbmin.x) / ofs);
-                                lx = std::clamp(lx, 0, 3);
-                                setSubgridBit(leaf.voxelSubgrid, lx, lv, lu, true);
-                                if (lx == 3) leaf.boundaryFlag = true;
-                            }
-                        } else if (axis == 1) {
-                            if (std::abs(n.y) < 1e-12f) continue;
-                            float x0 = bbmin.x + (lv + 0.5f) * ofs, z0 = bbmin.z + (lu + 0.5f) * ofs;
-                            float y0 = -(n.x * x0 + n.z * z0 + d) / n.y;
-                            if (y0 >= bbmin.y && y0 < bbmax.y) {
-                                int ly = (int)std::floor((y0 - bbmin.y) / ofs);
-                                ly = std::clamp(ly, 0, 3);
-                                setSubgridBit(leaf.voxelSubgrid, lv, ly, lu, true);
-                                if (lv == 3) leaf.boundaryFlag = true;
-                            }
-                        } else {
-                            if (std::abs(n.z) < 1e-12f) continue;
-                            float x0 = bbmin.x + (lv + 0.5f) * ofs, y0 = bbmin.y + (lu + 0.5f) * ofs;
-                            float z0 = -(n.x * x0 + n.y * y0 + d) / n.z;
-                            if (z0 >= bbmin.z && z0 < bbmax.z) {
-                                int lz = (int)std::floor((z0 - bbmin.z) / ofs);
-                                lz = std::clamp(lz, 0, 3);
-                                setSubgridBit(leaf.voxelSubgrid, lv, lu, lz, true);
-                                if (lv == 3) leaf.boundaryFlag = true;
-                            }
-                        }
-                    }
+                triangleCount++;
             }
         }
-    }
 
-    void propagateInsideOutside()
-    {
-        if (nodesPerLevel.empty() || nodesPerLevel[0].empty()) return;
-        {
-            auto& L0 = nodesPerLevel[0];
-            std::vector<int> heads;
-            for (int i = 0; i < (int)L0.size(); ++i)
-                if (L0[i].xNegNeighbor < 0) heads.push_back(i);
-            for (int h : heads) {
-                int cur = h;
-                bool flip = false;
-                while (cur >= 0) {
-                    if (L0[cur].boundaryFlag) flip = !flip;
-                    if (flip) L0[cur].voxelSubgrid = ~L0[cur].voxelSubgrid;
-                    cur = L0[cur].xPosNeighbor;
-                }
-            }
-        }
-        for (uint32_t L = 1; L <= maxLevel; ++L) {
-            auto& V = nodesPerLevel[L];
-            for (auto& p : V)
-                p.boundaryFlag = false;
-            for (auto& c : nodesPerLevel[L - 1])
-                if (c.parent >= 0) nodesPerLevel[L][c.parent].boundaryFlag |= c.boundaryFlag;
-            std::vector<int> heads;
-            for (int i = 0; i < (int)V.size(); ++i)
-                if (V[i].xNegNeighbor < 0) heads.push_back(i);
-            for (int h : heads) {
-                int cur = h;
-                bool inside = false;
-                while (cur >= 0) {
-                    if (V[cur].boundaryFlag) inside = !inside;
-                    V[cur].insideFlag = inside;
-                    cur = V[cur].xPosNeighbor;
-                }
-            }
-            for (auto& c : nodesPerLevel[L - 1])
-                if (c.parent >= 0)
-                    if (nodesPerLevel[L][c.parent].insideFlag) c.voxelSubgrid = ~c.voxelSubgrid;
-        }
-    }
+        // Now actually build the Morton octree
+        buildTree();
+        // traverseNodesRawRecursive(0);
 
-    static inline void setSubgridBit(uint64_t& grid, int lx, int ly, int lz, bool on)
-    {
-        int bit = ((lz << 4) | (ly << 2) | lx);
-        if (on)
-            grid |= (1ull << bit);
-        else
-            grid &= ~(1ull << bit);
+        std::println("Total triangles processed: {}", triangleCount);
+        std::println("Total voxels inserted: {}", m_items.size());
+        std::println("Total octree nodes: {}", m_nodes.size());
     }
 };
-
-// Helpers to iterate/collect finest voxels
-struct VoxelInfo
-{
-    int x, y, z;
-    glm::vec3 worldPos;
-    int level = 0;
-    bool isSet = true;
-    int nodeIndex = -1;
-};
-using VoxelCallback = std::function<void(const VoxelInfo&)>;
-
-inline void iterateSetVoxels(const OctTree& tree, VoxelCallback cb)
-{
-    if (tree.nodesPerLevel.empty()) return;
-    const float finest = tree.worldSize / float(tree.level0Grid * 4);
-    auto getBit = [](uint64_t g, int lx, int ly, int lz) { int bit=(lz<<4)|(ly<<2)|lx; return (g>>bit)&1ull; };
-    const auto& L0 = tree.nodesPerLevel[0];
-    for (size_t i = 0; i < L0.size(); ++i) {
-        const auto& n = L0[i];
-        uint32_t x = (uint32_t)(n.mortonPath & ((1u << 21) - 1));
-        uint32_t y = (uint32_t)((n.mortonPath >> 21) & ((1u << 21) - 1));
-        uint32_t z = (uint32_t)((n.mortonPath >> 42) & ((1u << 21) - 1));
-        for (int lz = 0; lz < 4; ++lz)
-            for (int ly = 0; ly < 4; ++ly)
-                for (int lx = 0; lx < 4; ++lx) {
-                    if (!getBit(n.voxelSubgrid, lx, ly, lz)) continue;
-                    VoxelInfo v;
-                    v.x = int(x) * 4 + lx;
-                    v.y = int(y) * 4 + ly;
-                    v.z = int(z) * 4 + lz;
-                    v.worldPos = glm::vec3((v.x + 0.5f) * finest, (v.y + 0.5f) * finest, (v.z + 0.5f) * finest);
-                    v.nodeIndex = (int)i;
-                    cb(v);
-                }
-    }
-}
-
-inline std::vector<Aabb> getAllSetVoxels(const OctTree& tree)
-{
-    std::vector<Aabb> out;
-    const float s = tree.worldSize / float(tree.level0Grid * 4);
-    const glm::vec3 h(s * 0.5f);
-    iterateSetVoxels(tree, [&](const VoxelInfo& v) { out.push_back(Aabb{v.worldPos - h, v.worldPos + h}); });
-    return out;
-}
-
-// =================== New: build using ONLY voxel size ===================
-namespace octree_voxelsize_detail {
-inline uint32_t nextPow2(uint32_t v)
-{
-    if (v <= 1) return 1;
-    v--;
-    v |= v >> 1;
-    v |= v >> 2;
-    v |= v >> 4;
-    v |= v >> 8;
-    v |= v >> 16;
-    v++;
-    return v;
-}
-inline uint32_t roundUpMultiple(uint32_t v, uint32_t m)
-{
-    return ((v + m - 1) / m) * m;
-}
-}
-
-inline OctTree BuildOctreeWithVoxelSize(std::vector<Triangle> tris, float voxelSize, uint32_t maxLevel = 4)
-{
-    // Compute bbox
-    glm::vec3 mn(std::numeric_limits<float>::infinity());
-    glm::vec3 mx(-std::numeric_limits<float>::infinity());
-    auto upd = [&](const glm::vec3& p) { mn=glm::min(mn,p); mx=glm::max(mx,p); };
-    for (auto& t : tris) {
-        upd(t.v0);
-        upd(t.v1);
-        upd(t.v2);
-    }
-
-    // Translate so min -> 0 (no scaling)
-    glm::vec3 off = -mn;
-    for (auto& t : tris) {
-        t.v0 += off;
-        t.v1 += off;
-        t.v2 += off;
-        t.normal = glm::normalize(glm::cross(t.v1 - t.v0, t.v2 - t.v0));
-    }
-
-    glm::vec3 ext = mx - mn;
-    float maxDim = std::max(ext.x, std::max(ext.y, ext.z));
-    if (maxDim <= 0.f) return OctTree(maxLevel, 4, 4 * voxelSize);
-
-    uint32_t grid = (uint32_t)std::ceil(maxDim / voxelSize);
-    grid = octree_voxelsize_detail::roundUpMultiple(grid, 4);
-    grid = std::max(4u, octree_voxelsize_detail::nextPow2(grid));
-    float worldSize = float(grid) * voxelSize;
-
-    OctTree tree(maxLevel, grid, worldSize);
-    tree.build(tris);
-    return tree;
-}
