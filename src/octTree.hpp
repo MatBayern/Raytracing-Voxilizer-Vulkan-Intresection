@@ -8,6 +8,7 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <execution>
 #include <filesystem>
 #include <limits>
 #include <memory>
@@ -91,7 +92,7 @@ private:
     //=========================================================
 
     // Expands a 21-bit integer into 63 bits by inserting 2 zeros between each bit.
-    constexpr MortonCode expandBits(std::uint32_t v) noexcept
+    constexpr MortonCode expandBits(std::uint32_t v) const noexcept
     {
         MortonCode x = v & 0x1fffffu; // 21 bits
         x = (x | (x << 32)) & 0x1f00000000ffffULL;
@@ -102,7 +103,7 @@ private:
         return x;
     }
 
-    constexpr MortonCode morton3D(std::uint32_t x, std::uint32_t y, std::uint32_t z) noexcept
+    constexpr MortonCode morton3D(std::uint32_t x, std::uint32_t y, std::uint32_t z) const noexcept
     {
         MortonCode xx = expandBits(x);
         MortonCode yy = expandBits(y) << 1;
@@ -152,7 +153,7 @@ private:
     //=====================================================
     // Helpers
     //=====================================================
-    ObjMesh readObjFile(const std::filesystem::path& path)
+    ObjMesh readObjFile(const std::filesystem::path& path) const
     {
         if (!std::filesystem::exists(path)) {
             throw std::invalid_argument("Path does not exist!");
@@ -173,7 +174,7 @@ private:
     }
 
     // Map a world-space position into [0, 2^maxDepth-1]^3 and then to a Morton code
-    MortonCode encodePositionToMorton(const glm::vec3& pos) noexcept
+    MortonCode encodePositionToMorton(const glm::vec3& pos) const noexcept
     {
         glm::vec3 size = m_rootBounds.maximum - m_rootBounds.minimum;
         // Avoid division by zero; clamp degenerate axes
@@ -189,9 +190,9 @@ private:
             return std::max(0.0f, std::min(1.0f, v));
         };
 
-        std::uint32_t ix = static_cast<std::uint32_t>(clamp01(rel.x) * gridMaxF + 0.5f);
-        std::uint32_t iy = static_cast<std::uint32_t>(clamp01(rel.y) * gridMaxF + 0.5f);
-        std::uint32_t iz = static_cast<std::uint32_t>(clamp01(rel.z) * gridMaxF + 0.5f);
+        const std::uint32_t ix = static_cast<std::uint32_t>(clamp01(rel.x) * gridMaxF + 0.5f);
+        const std::uint32_t iy = static_cast<std::uint32_t>(clamp01(rel.y) * gridMaxF + 0.5f);
+        const std::uint32_t iz = static_cast<std::uint32_t>(clamp01(rel.z) * gridMaxF + 0.5f);
 
         return morton3D(ix, iy, iz);
     }
@@ -234,7 +235,7 @@ private:
             if (childBegin == cur)
                 continue;
 
-            Aabb childBounds = makeChildAabb(bounds, child);
+            const Aabb childBounds = makeChildAabb(bounds, child);
             std::uint32_t childIndex = buildNodeRecursive(childBegin, cur, childBounds, depth + 1);
 
             m_nodes[nodeIndex].children[child] = childIndex;
@@ -246,7 +247,7 @@ private:
     void buildTree()
     {
         // Sort by morton code
-        std::sort(m_items.begin(), m_items.end(),
+        std::sort(std::execution::par, m_items.begin(), m_items.end(),
             [](const Item& a, const Item& b) { return a.morton < b.morton; });
 
         m_nodes.clear();
@@ -305,7 +306,7 @@ private:
         }
     }
 
-    bool triBoxOverlapSchwarzSeidel(const glm::vec3& c, const glm::vec3& h, const glm::vec3& v0, const glm::vec3& v1, const glm::vec3& v2)
+    bool triBoxOverlapSchwarzSeidel(const glm::vec3& c, const glm::vec3& h, const glm::vec3& v0, const glm::vec3& v1, const glm::vec3& v2) const noexcept
     {
         // Translate triangle to box-centered coordinates
         glm::vec3 p0 = v0 - c;
@@ -421,7 +422,7 @@ public:
         ObjMesh mesh = readObjFile(path);
 
         m_rootBounds = computeBboxFromAttrib(mesh.attrib);
-        m_maxDepth = std::log2(std::ceil((m_rootBounds.maximum.x - m_rootBounds.minimum.x) / voxSize)) + 2;
+        m_maxDepth = static_cast<size_t>(std::log2(std::ceil((m_rootBounds.maximum.x - m_rootBounds.minimum.x) / voxSize)) + 2);
 
         if (m_maxDepth > 21) {
             throw std::runtime_error("We support up to 21 levels (Morton 21 bits per axis)!");
@@ -430,7 +431,7 @@ public:
         buildVoxelGrid(voxSize, mesh);
     }
 
-    std::vector<Aabb> getAabbs() const noexcept
+    std::vector<Aabb> getAabbs() const
     {
         std::vector<Aabb> ret;
         traverseNodesRawRecursive(0, &ret);
@@ -459,13 +460,11 @@ private:
     // Insert a point (voxel center) into the octree
     bool insert(const glm::vec3& pos)
     {
-        if (!aabbContains(m_rootBounds, pos))
+        if (!aabbContains(m_rootBounds, pos)) {
             return false;
+        }
 
-        Item i{};
-        i.position = pos;
-        i.morton = encodePositionToMorton(pos);
-        m_items.push_back(i);
+        m_items.emplace_back(pos, encodePositionToMorton(pos)); // pos morton
 
         return true;
     }
