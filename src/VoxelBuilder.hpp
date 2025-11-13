@@ -422,6 +422,7 @@ public:
             }
         }
         std::println("Total triangles processed: {}", triangleCount);
+        m_materials.shrink_to_fit();
 
         return voxelGrid;
     }

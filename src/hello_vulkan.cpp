@@ -668,7 +668,7 @@ auto HelloVulkan::AABBToVkGeometryKHR()
 //
 void HelloVulkan::createAABB(const std::string& path, float voxleSize)
 {
-    
+    /*
     VoxelBuilder<VoxelGridBool> voxelBuilder{std::filesystem::path(path)};
     const auto startVoxelGrid = std::chrono::high_resolution_clock::now();
     VoxelGridBool vox = voxelBuilder.buildVoxelGrid(voxleSize);
@@ -684,9 +684,8 @@ void HelloVulkan::createAABB(const std::string& path, float voxleSize)
     std::println("Voxel build took {}", std::chrono::duration_cast<std::chrono::milliseconds>(stopVoxelGrid - startVoxelGrid));
     std::println("Aabb build took {}", std::chrono::duration_cast<std::chrono::milliseconds>(stopAabb - startAabb));
     std::println("Total usage of the VoxelGridBool is {}", vox.getMemoryUsageBytes());
-    
+    */
 
-    /*
     const auto startAabb = std::chrono::high_resolution_clock::now();
     Octree tree{std::filesystem::path(path), voxleSize};
     const auto stopAabb = std::chrono::high_resolution_clock::now();
@@ -699,7 +698,7 @@ void HelloVulkan::createAABB(const std::string& path, float voxleSize)
 
     const std::vector<Aabb> aabbs = tree.getAabbs();
     std::vector<int> idx(aabbs.size(), 0);
-    */
+
     m_aabbsSize = static_cast<uint32_t>(aabbs.size());
 
     // Creating all buffers

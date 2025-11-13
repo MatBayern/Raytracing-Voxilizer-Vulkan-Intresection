@@ -5,13 +5,10 @@
 #include <glm/glm.hpp>
 
 // STD
-#include <algorithm>
 #include <array>
-#include <cassert>
 #include <cmath>
 #include <cstdint>
 #include <filesystem>
-#include <format>
 #include <limits>
 #include <memory>
 #include <print>
@@ -107,25 +104,6 @@ private:
         MortonCode yy = expandBits(y) << 1;
         MortonCode zz = expandBits(z) << 2;
         return xx | yy | zz;
-    }
-
-    constexpr uint32_t compactBits(uint64_t x)
-    {
-        x &= 0x1249249249249249ULL;
-        x = (x ^ (x >> 2)) & 0x10c30c30c30c30c3ULL;
-        x = (x ^ (x >> 4)) & 0x100f00f00f00f00fULL;
-        x = (x ^ (x >> 8)) & 0x1f0000ff0000ffULL;
-        x = (x ^ (x >> 16)) & 0x1f00000000ffffULL;
-        x = (x ^ (x >> 32)) & 0x1fffffULL; // 21 bits
-        return (uint32_t)x;
-    }
-
-    constexpr glm::uvec3 decodeMorton3D(uint64_t code)
-    {
-        uint32_t x = compactBits(code);
-        uint32_t y = compactBits(code >> 1);
-        uint32_t z = compactBits(code >> 2);
-        return glm::uvec3(x, y, z);
     }
 
     struct Node
