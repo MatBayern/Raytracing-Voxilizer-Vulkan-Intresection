@@ -664,7 +664,7 @@ auto HelloVulkan::AABBToVkGeometryKHR()
 }
 
 //--------------------------------------------------------------------------------------------------
-// Creating all spheres
+// Creating all aabbs
 //
 void HelloVulkan::createAABB(const std::string& path, float voxleSize)
 {
@@ -698,7 +698,6 @@ void HelloVulkan::createAABB(const std::string& path, float voxleSize)
 
     const std::vector<Aabb> aabbs = tree.getAabbs();
     std::vector<int> idx(aabbs.size(), 0);
-
     m_aabbsSize = static_cast<uint32_t>(aabbs.size());
 
     // Creating all buffers

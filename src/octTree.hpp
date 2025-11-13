@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "shaders/host_device.h"
 #include "tiny_obj_loader.h"
@@ -13,7 +13,11 @@
 #include <memory>
 #include <print>
 #include <vector>
-
+/**
+ *
+ *  Stack size needs to be increaed for this to work !!!
+ *
+ */
 //=========================================================
 // Basic AABB utilities for your Aabb struct
 //=========================================================
@@ -110,6 +114,10 @@ private:
     {
         // AABB is no longer stored per node to save memory.
         std::array<std::uint32_t, 8> children{}; // indices into m_nodes, or INVALID
+
+        // indices into m_nodes, or INVALID. We have to use a std::vector otherwise can be stackoverflows since arrays are on the stack the problem that
+        // we have to acess which is way slower
+        // std::vector<std::uint32_t> children{INVALID_INDEX, INVALID_INDEX, INVALID_INDEX, INVALID_INDEX, INVALID_INDEX, INVALID_INDEX, INVALID_INDEX, INVALID_INDEX};
         std::uint32_t start = 0; // start index into m_items
         std::uint32_t count = 0; // number of items in this subtree
         std::uint8_t depth = 0; // tree depth (0 = root)
@@ -189,23 +197,23 @@ private:
     }
 
     // Recursive build of nodes over sorted m_items
-    std::uint32_t buildNodeRecursive(std::uint32_t begin, std::uint32_t end, const Aabb& bounds, std::uint8_t depth)
+    std::uint32_t buildNodeRecursive(std::uint32_t begin,
+        std::uint32_t end,
+        const Aabb& bounds,
+        std::uint32_t depth)
     {
         const std::uint32_t nodeIndex = static_cast<std::uint32_t>(m_nodes.size());
         m_nodes.emplace_back();
-        Node& node = m_nodes.back();
 
-        node.start = begin;
-        node.count = end - begin;
-        node.depth = depth;
-        node.children.fill(INVALID_INDEX);
+        m_nodes[nodeIndex].start = begin;
+        m_nodes[nodeIndex].count = end - begin;
+        m_nodes[nodeIndex].depth = depth;
+        m_nodes[nodeIndex].children.fill(INVALID_INDEX);
 
-        // Leaf condition: reached max depth or few enough items
-        if (depth >= m_maxDepth || node.count <= m_maxItems) {
+        if (depth >= m_maxDepth || m_nodes[nodeIndex].count <= m_maxItems) {
             return nodeIndex;
         }
 
-        // Partition items by child octant based on Morton bits
         const std::uint32_t totalDepth = static_cast<std::uint32_t>(m_maxDepth);
         const std::uint32_t levelShift = 3u * (totalDepth - 1u - depth);
 
@@ -224,11 +232,12 @@ private:
             }
 
             if (childBegin == cur)
-                continue; // no items in this octant
+                continue;
 
             Aabb childBounds = makeChildAabb(bounds, child);
             std::uint32_t childIndex = buildNodeRecursive(childBegin, cur, childBounds, depth + 1);
-            node.children[child] = childIndex;
+
+            m_nodes[nodeIndex].children[child] = childIndex;
         }
 
         return nodeIndex;
@@ -404,16 +413,20 @@ private:
 public:
     explicit Octree(const std::filesystem::path& path,
         float voxSize,
-        size_t maxItemsPerLeaf = 8,
-        size_t maxDepth = 9)
-        : m_maxItems(maxItemsPerLeaf), m_maxDepth(maxDepth)
+        size_t maxItemsPerLeaf = 8)
+        : m_maxItems(maxItemsPerLeaf)
     {
         // We support up to 21 levels (Morton 21 bits per axis)
-        if (m_maxDepth > 21)
-            m_maxDepth = 21;
 
         ObjMesh mesh = readObjFile(path);
+
         m_rootBounds = computeBboxFromAttrib(mesh.attrib);
+        m_maxDepth = std::log2(std::ceil((m_rootBounds.maximum.x - m_rootBounds.minimum.x) / voxSize)) + 2;
+
+        if (m_maxDepth > 21) {
+            throw std::runtime_error("We support up to 21 levels (Morton 21 bits per axis)!");
+        }
+
         buildVoxelGrid(voxSize, mesh);
     }
 
@@ -581,11 +594,10 @@ private:
                 triangleCount++;
             }
         }
-
+        std::println("Total triangles processed: {}", triangleCount);
         // Now actually build the Morton octree
         buildTree();
 
-        std::println("Total triangles processed: {}", triangleCount);
         std::println("Total voxels inserted: {}", m_items.size());
         std::println("Total octree nodes: {}", m_nodes.size());
     }

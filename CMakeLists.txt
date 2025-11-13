@@ -34,6 +34,9 @@ set(TUTO_KHR_DIR ${CMAKE_CURRENT_SOURCE_DIR})
 if(MSVC)
   add_definitions(/wd26812)  # 'enum class' over 'enum'
   add_definitions(/wd26451)  # 4->8 byte cast warning
+  set(CMAKE_EXE_LINKER_FLAGS
+      "${CMAKE_EXE_LINKER_FLAGS} /STACK:536870912"
+  )
 endif()
 
 # ------------------------------------------------------------
