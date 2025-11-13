@@ -2,8 +2,6 @@
 
 #include "shaders/host_device.h"
 #include "tiny_obj_loader.h"
-#include "voxelgrid.hpp"
-#include "voxelgridAABBstruct.hpp"
 #include <glm/glm.hpp>
 
 // STD
@@ -74,36 +72,12 @@ inline Aabb makeChildAabb(const Aabb& parent, int octant)
 }
 
 //=========================================================
-// Morton code utilities
-//=========================================================
-using MortonCode = std::uint64_t;
-
-// Expands a 21-bit integer into 63 bits by inserting 2 zeros between each bit.
-inline MortonCode expandBits(std::uint32_t v)
-{
-    MortonCode x = v & 0x1fffffu; // 21 bits
-    x = (x | (x << 32)) & 0x1f00000000ffffULL;
-    x = (x | (x << 16)) & 0x1f0000ff0000ffULL;
-    x = (x | (x << 8)) & 0x100f00f00f00f00FULL;
-    x = (x | (x << 4)) & 0x10c30c30c30c30C3ULL;
-    x = (x | (x << 2)) & 0x1249249249249249ULL;
-    return x;
-}
-
-inline MortonCode morton3D(std::uint32_t x, std::uint32_t y, std::uint32_t z)
-{
-    MortonCode xx = expandBits(x);
-    MortonCode yy = expandBits(y) << 1;
-    MortonCode zz = expandBits(z) << 2;
-    return xx | yy | zz;
-}
-
-//=========================================================
 // OCTREE (Morton-code, flat node array)
 //=========================================================
 class Octree
 {
 public:
+    using MortonCode = std::uint64_t;
     struct Item
     {
         glm::vec3 position; // world-space position (voxel center)
@@ -111,9 +85,52 @@ public:
     };
 
 private:
+    //=========================================================
+    // Morton code utilities
+    //=========================================================
+
+    // Expands a 21-bit integer into 63 bits by inserting 2 zeros between each bit.
+    constexpr MortonCode expandBits(std::uint32_t v) noexcept
+    {
+        MortonCode x = v & 0x1fffffu; // 21 bits
+        x = (x | (x << 32)) & 0x1f00000000ffffULL;
+        x = (x | (x << 16)) & 0x1f0000ff0000ffULL;
+        x = (x | (x << 8)) & 0x100f00f00f00f00FULL;
+        x = (x | (x << 4)) & 0x10c30c30c30c30C3ULL;
+        x = (x | (x << 2)) & 0x1249249249249249ULL;
+        return x;
+    }
+
+    constexpr MortonCode morton3D(std::uint32_t x, std::uint32_t y, std::uint32_t z) noexcept
+    {
+        MortonCode xx = expandBits(x);
+        MortonCode yy = expandBits(y) << 1;
+        MortonCode zz = expandBits(z) << 2;
+        return xx | yy | zz;
+    }
+
+    constexpr uint32_t compactBits(uint64_t x)
+    {
+        x &= 0x1249249249249249ULL;
+        x = (x ^ (x >> 2)) & 0x10c30c30c30c30c3ULL;
+        x = (x ^ (x >> 4)) & 0x100f00f00f00f00fULL;
+        x = (x ^ (x >> 8)) & 0x1f0000ff0000ffULL;
+        x = (x ^ (x >> 16)) & 0x1f00000000ffffULL;
+        x = (x ^ (x >> 32)) & 0x1fffffULL; // 21 bits
+        return (uint32_t)x;
+    }
+
+    constexpr glm::uvec3 decodeMorton3D(uint64_t code)
+    {
+        uint32_t x = compactBits(code);
+        uint32_t y = compactBits(code >> 1);
+        uint32_t z = compactBits(code >> 2);
+        return glm::uvec3(x, y, z);
+    }
+
     struct Node
     {
-        Aabb bounds{};
+        // AABB is no longer stored per node to save memory.
         std::array<std::uint32_t, 8> children{}; // indices into m_nodes, or INVALID
         std::uint32_t start = 0; // start index into m_items
         std::uint32_t count = 0; // number of items in this subtree
@@ -140,15 +157,16 @@ private:
 
     glm::vec3 m_halfVoxelSize{0.0f};
     // OBJ data
-    std::vector<tinyobj::shape_t> m_shapes;
-    tinyobj::attrib_t m_attribs;
-
-    // AABB vector (for debug / visualization)
+    struct ObjMesh
+    {
+        tinyobj::attrib_t attrib;
+        std::vector<tinyobj::shape_t> shapes;
+    };
 
     //=====================================================
     // Helpers
     //=====================================================
-    void readObjFile(const std::filesystem::path& path)
+    ObjMesh readObjFile(const std::filesystem::path& path)
     {
         if (!std::filesystem::exists(path)) {
             throw std::invalid_argument("Path does not exist!");
@@ -158,15 +176,18 @@ private:
         reader.ParseFromFile(path.string());
 
         if (!reader.Valid()) {
-            throw std::runtime_error(std::format("Could not get valid reader! Error message {}", reader.Error()));
+            throw std::runtime_error(
+                std::format("Could not get valid reader! Error message {}", reader.Error()));
         }
 
-        m_attribs = reader.GetAttrib();
-        m_shapes = reader.GetShapes();
+        ObjMesh mesh;
+        mesh.attrib = reader.GetAttrib();
+        mesh.shapes = reader.GetShapes();
+        return mesh; // NRVO / move
     }
 
     // Map a world-space position into [0, 2^maxDepth-1]^3 and then to a Morton code
-    MortonCode encodePositionToMorton(const glm::vec3& pos) const
+    MortonCode encodePositionToMorton(const glm::vec3& pos) noexcept
     {
         glm::vec3 size = m_rootBounds.maximum - m_rootBounds.minimum;
         // Avoid division by zero; clamp degenerate axes
@@ -196,7 +217,6 @@ private:
         m_nodes.emplace_back();
         Node& node = m_nodes.back();
 
-        node.bounds = bounds;
         node.start = begin;
         node.count = end - begin;
         node.depth = depth;
@@ -238,23 +258,28 @@ private:
 
     void buildTree()
     {
-
         // Sort by morton code
         std::sort(m_items.begin(), m_items.end(),
             [](const Item& a, const Item& b) { return a.morton < b.morton; });
 
         m_nodes.clear();
-        m_nodes.reserve(m_items.size() * 2); // heuristic
+        // A more conservative reserve: roughly one node per several items
+        if (!m_items.empty()) {
+            m_nodes.reserve(std::max<size_t>(1, m_items.size() / 4));
+        }
 
         buildNodeRecursive(0, static_cast<std::uint32_t>(m_items.size()), m_rootBounds, 0);
     }
 
-    void queryRecursive(std::uint32_t nodeIndex, const Aabb& range, std::vector<Item>& out) const
+    void queryRecursive(std::uint32_t nodeIndex,
+        const Aabb& nodeBounds,
+        const Aabb& range,
+        std::vector<Item>& out) const
     {
-        const Node& node = m_nodes[nodeIndex];
-
-        if (!aabbIntersects(node.bounds, range))
+        if (!aabbIntersects(nodeBounds, range))
             return;
+
+        const Node& node = m_nodes[nodeIndex];
 
         if (node.isLeaf()) {
             const std::uint32_t end = node.start + node.count;
@@ -266,8 +291,10 @@ private:
         } else {
             for (int c = 0; c < 8; ++c) {
                 std::uint32_t ci = node.children[c];
-                if (ci != INVALID_INDEX)
-                    queryRecursive(ci, range, out);
+                if (ci != INVALID_INDEX) {
+                    Aabb childBounds = makeChildAabb(nodeBounds, c);
+                    queryRecursive(ci, childBounds, range, out);
+                }
             }
         }
     }
@@ -280,7 +307,6 @@ private:
             const std::uint32_t end = node.start + node.count;
             for (std::uint32_t i = node.start; i < end; ++i) {
                 const Item& it = m_items[i];
-
                 out->emplace_back(it.position - m_halfVoxelSize, it.position + m_halfVoxelSize); // min max
             }
         } else {
@@ -377,14 +403,14 @@ private:
             p0d = p0.x * e2.z - p0.z * e2.x;
             p1d = p1.x * e2.z - p1.z * e2.x;
             p2d = p2.x * e2.z - p2.z * e2.x;
-            R = h.x * ae2.z + h.z * ae2.x;
-            if (sepAxis(p0d, p1d, p2d, R)) return false;
+            float R2 = h.x * ae2.z + h.z * ae2.x;
+            if (sepAxis(p0d, p1d, p2d, R2)) return false;
 
             p0d = -p0.y * e2.x + p0.x * e2.y;
             p1d = -p1.y * e2.x + p1.x * e2.y;
             p2d = -p2.y * e2.x + p2.x * e2.y;
-            R = h.x * ae2.y + h.y * ae2.x;
-            if (sepAxis(p0d, p1d, p2d, R)) return false;
+            float R3 = h.x * ae2.y + h.y * ae2.x;
+            if (sepAxis(p0d, p1d, p2d, R3)) return false;
         }
 
         // Triangle plane vs box
@@ -408,9 +434,9 @@ public:
         if (m_maxDepth > 21)
             m_maxDepth = 21;
 
-        readObjFile(path);
-        m_rootBounds = computeBboxFromAttrib(m_attribs);
-        buildVoxelGrid(voxSize);
+        ObjMesh mesh = readObjFile(path);
+        m_rootBounds = computeBboxFromAttrib(mesh.attrib);
+        buildVoxelGrid(voxSize, mesh);
     }
 
     std::vector<Aabb> getAabbs() const noexcept
@@ -418,6 +444,19 @@ public:
         std::vector<Aabb> ret;
         traverseNodesRawRecursive(0, &ret);
         return ret;
+    }
+
+    size_t getMemoryUsageBytes() const noexcept
+    {
+        size_t bytes = 0;
+
+        // 1) Speicher der Items
+        bytes += m_items.capacity() * sizeof(Item);
+
+        // 2) Speicher der Nodes
+        bytes += m_nodes.capacity() * sizeof(Node);
+
+        return bytes;
     }
 
     Octree(const Octree&) = delete;
@@ -447,7 +486,7 @@ private:
         if (m_nodes.empty())
             return;
 
-        queryRecursive(0, range, out);
+        queryRecursive(0, m_rootBounds, range, out);
     }
 
     std::vector<Item> query(const Aabb& range)
@@ -484,10 +523,11 @@ private:
 
         return bb;
     }
+
     // Build voxel grid and fill octree with voxel centers (Morton-coded)
-    void buildVoxelGrid(float voxelSize)
+    void buildVoxelGrid(float voxelSize, const ObjMesh& ObjData)
     {
-        const auto bb = computeBboxFromAttrib(m_attribs);
+        const auto bb = computeBboxFromAttrib(ObjData.attrib);
         m_rootBounds = bb;
         const size_t width = static_cast<size_t>(std::ceil((bb.maximum.x - bb.minimum.x) / voxelSize));
         const size_t height = static_cast<size_t>(std::ceil((bb.maximum.y - bb.minimum.y) / voxelSize));
@@ -506,9 +546,9 @@ private:
 
         const auto loadPos = [&](const tinyobj::index_t& idx) -> glm::vec3 {
             const size_t vi = static_cast<size_t>(idx.vertex_index);
-            const tinyobj::real_t vx = m_attribs.vertices[3 * vi];
-            const tinyobj::real_t vy = m_attribs.vertices[3 * vi + 1];
-            const tinyobj::real_t vz = m_attribs.vertices[3 * vi + 2];
+            const tinyobj::real_t vx = ObjData.attrib.vertices[3 * vi];
+            const tinyobj::real_t vy = ObjData.attrib.vertices[3 * vi + 1];
+            const tinyobj::real_t vz = ObjData.attrib.vertices[3 * vi + 2];
             return glm::vec3{vx, vy, vz};
         };
 
@@ -519,8 +559,8 @@ private:
             voxelSize * 0.5f};
         m_halfVoxelSize = halfVoxelSize;
 
-        for (size_t s = 0; s < m_shapes.size(); s++) {
-            const auto& mesh = m_shapes[s].mesh;
+        for (size_t s = 0; s < ObjData.shapes.size(); s++) {
+            const auto& mesh = ObjData.shapes[s].mesh;
 
             for (size_t i = 0; i < mesh.indices.size(); i += 3) {
                 if (i + 2 >= mesh.indices.size()) break; // Safety check
@@ -566,7 +606,6 @@ private:
 
         // Now actually build the Morton octree
         buildTree();
-        // traverseNodesRawRecursive(0);
 
         std::println("Total triangles processed: {}", triangleCount);
         std::println("Total voxels inserted: {}", m_items.size());
