@@ -33,9 +33,6 @@ protected:
     std::vector<T> m_voxel;
     std::unordered_map<MaterialObj, int> m_materialMap;
 
-    //
-    glm::mat3 m_Tranfomermatrix;
-
     // Helpers
     constexpr size_t map3dto1d(size_t x, size_t y, size_t z) const noexcept
     {
@@ -51,17 +48,6 @@ protected:
         return {x, y, z};
     }
 
-    constexpr glm::mat3 mat3FromLinear()
-    {
-        glm::mat3 A(0.f); // column-major
-        for (int j = 0; j < 3; ++j) {
-            glm::vec3 e(0.0f);
-            e[j] = 1.0f; // standard basis e_j
-            A[j] = m_org + (e + 0.5f) * m_voxelSize; // column j is f(e_j)
-        }
-        return A;
-    }
-
 public:
     VoxelGrid(size_t x, size_t y, size_t z, float voxelSize, vec3 org = {0.f, 0.f, 0.f})
         : m_x(x),
@@ -73,8 +59,7 @@ public:
           m_voxel(x * y * z, T{}),
           m_matIdx(x * y * z, -1)
     {
-        m_materials.reserve((x * y * z) / 4);
-        m_Tranfomermatrix = mat3FromLinear();
+        m_materials.reserve(16);
     }
 
     virtual ~VoxelGrid() = default;
@@ -127,6 +112,19 @@ public:
             m_materialMap[material] = newIndex;
             m_matIdx[idx] = newIndex;
         }
+    }
+    size_t getMemoryUsageBytes() const noexcept
+    {
+        size_t bytes = 0;
+
+        bytes += m_voxel.capacity() * sizeof(T);
+        bytes += sizeof(m_materialMap);
+        for (auto it = m_materialMap.begin(); it != m_materialMap.end(); ++it) {
+            bytes += sizeof(it->first);
+            bytes += sizeof(it->second);
+        }
+
+        return bytes;
     }
 
     // Abstract Methods
