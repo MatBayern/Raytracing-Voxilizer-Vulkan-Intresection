@@ -249,7 +249,7 @@ private:
     void buildTree()
     {
         // Sort by morton code
-        std::sort(std::execution::par, m_items.begin(), m_items.end(),
+        std::sort(std::execution::par_unseq, m_items.begin(), m_items.end(),
             [](const Item& a, const Item& b) { return a.morton < b.morton; });
 
         m_nodes.clear();
@@ -264,7 +264,7 @@ private:
     void queryRecursive(std::uint32_t nodeIndex,
         const Aabb& nodeBounds,
         const Aabb& range,
-        std::vector<Item>& out) const
+        std::vector<Item>* out) const
     {
         if (!aabbIntersects(nodeBounds, range))
             return;
@@ -276,7 +276,7 @@ private:
             for (std::uint32_t i = node.start; i < end; ++i) {
                 const Item& it = m_items[i];
                 if (aabbContains(range, it.position))
-                    out.push_back(it);
+                    out->push_back(it);
             }
         } else {
             for (int c = 0; c < 8; ++c) {
@@ -472,7 +472,7 @@ private:
     }
 
     // Query items inside range
-    void query(const Aabb& range, std::vector<Item>& out)
+    void query(const Aabb& range, std::vector<Item>* out)
     {
         buildTree();
         if (m_nodes.empty())
@@ -484,7 +484,7 @@ private:
     std::vector<Item> query(const Aabb& range)
     {
         std::vector<Item> result;
-        query(range, result);
+        query(range, &result);
         return result;
     }
 
@@ -680,7 +680,7 @@ private:
                 std::make_move_iterator(bucket.end()));
         }
 
-        const size_t triangleCount = std::accumulate(threadTriangleCounts.begin(), threadTriangleCounts.end(), size_t{0});
+        const size_t triangleCount = std::accumulate(threadTriangleCounts.begin(), threadTriangleCounts.end(), size_t{0u});
 
         std::println("Total triangles processed: {}", triangleCount);
         std::println("Total voxels inserted (before tree build): {}", m_items.size());
