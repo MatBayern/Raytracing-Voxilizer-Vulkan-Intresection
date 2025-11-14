@@ -12,7 +12,9 @@
 #include <filesystem>
 #include <limits>
 #include <memory>
+#include <numeric>
 #include <print>
+#include <thread>
 #include <vector>
 /**
  *
@@ -515,10 +517,12 @@ private:
     }
 
     // Build voxel grid and fill octree with voxel centers (Morton-coded)
+    // Build voxel grid and fill octree with voxel centers (Morton-coded)
     void buildVoxelGrid(float voxelSize, const ObjMesh& ObjData)
     {
         const auto bb = computeBboxFromAttrib(ObjData.attrib);
         m_rootBounds = bb;
+
         const size_t width = static_cast<size_t>(std::ceil((bb.maximum.x - bb.minimum.x) / voxelSize));
         const size_t height = static_cast<size_t>(std::ceil((bb.maximum.y - bb.minimum.y) / voxelSize));
         const size_t depth = static_cast<size_t>(std::ceil((bb.maximum.z - bb.minimum.z) / voxelSize));
@@ -526,8 +530,9 @@ private:
         std::println("Grid dimensions: {}x{}x{}", width, height, depth);
         std::println("Voxel size: {}", voxelSize);
 
-        const auto getCorrds = [voxelSize, &bb](size_t x, size_t y, size_t z) -> glm::vec3 {
-            glm::vec3 posvec{static_cast<float>(x),
+        const auto getCoords = [voxelSize, &bb](size_t x, size_t y, size_t z) -> glm::vec3 {
+            glm::vec3 posvec{
+                static_cast<float>(x),
                 static_cast<float>(y),
                 static_cast<float>(z)};
             glm::vec3 ret = bb.minimum + (posvec + 0.5f) * voxelSize;
@@ -542,62 +547,147 @@ private:
             return glm::vec3{vx, vy, vz};
         };
 
-        size_t triangleCount = 0;
-
-        const glm::vec3 halfVoxelSize = {voxelSize * 0.5f,
+        const glm::vec3 halfVoxelSize{
+            voxelSize * 0.5f,
             voxelSize * 0.5f,
             voxelSize * 0.5f};
         m_halfVoxelSize = halfVoxelSize;
 
-        for (size_t s = 0; s < ObjData.shapes.size(); s++) {
+        // Flatten all triangles from all shapes into a single list
+        struct TriRef
+        {
+            size_t shapeIndex;
+            size_t indexOffset; // index into mesh.indices (multiple of 3)
+        };
+
+        std::vector<TriRef> triList;
+        triList.reserve(1024);
+
+        size_t totalTriangles = 0;
+        for (size_t s = 0; s < ObjData.shapes.size(); ++s) {
             const auto& mesh = ObjData.shapes[s].mesh;
+            totalTriangles += mesh.indices.size() / 3;
+        }
+        triList.reserve(totalTriangles);
 
-            for (size_t i = 0; i < mesh.indices.size(); i += 3) {
-                if (i + 2 >= mesh.indices.size()) break; // Safety check
+        for (size_t s = 0; s < ObjData.shapes.size(); ++s) {
+            const auto& mesh = ObjData.shapes[s].mesh;
+            for (size_t i = 0; i + 2 < mesh.indices.size(); i += 3) {
+                triList.push_back(TriRef{s, i});
+            }
+        }
 
-                const tinyobj::index_t i0 = mesh.indices[i];
-                const tinyobj::index_t i1 = mesh.indices[i + 1];
-                const tinyobj::index_t i2 = mesh.indices[i + 2];
+        const size_t numTris = triList.size();
+        if (numTris == 0) {
+            std::println("No triangles in OBJ, nothing to voxelize.");
+            return;
+        }
 
-                const auto p0 = loadPos(i0);
-                const auto p1 = loadPos(i1);
-                const auto p2 = loadPos(i2);
+        // Decide number of worker threads
+        unsigned int numThreads = std::max(1u, std::thread::hardware_concurrency());
 
-                const glm::vec3 triMin = glm::min(p0, glm::min(p1, p2));
-                const glm::vec3 triMax = glm::max(p0, glm::max(p1, p2));
+        std::println("Using {} threads for voxelization over {} triangles.", numThreads, numTris);
 
-                const int xStart = std::max(0, static_cast<int>((triMin.x - bb.minimum.x) / voxelSize));
-                const int yStart = std::max(0, static_cast<int>((triMin.y - bb.minimum.y) / voxelSize));
-                const int zStart = std::max(0, static_cast<int>((triMin.z - bb.minimum.z) / voxelSize));
+        const size_t chunkSize = (numTris + numThreads - 1) / numThreads;
 
-                const int xEnd = std::min(static_cast<int>(width),
-                    static_cast<int>((triMax.x - bb.minimum.x) / voxelSize) + 2);
-                const int yEnd = std::min(static_cast<int>(height),
-                    static_cast<int>((triMax.y - bb.minimum.y) / voxelSize) + 2);
-                const int zEnd = std::min(static_cast<int>(depth),
-                    static_cast<int>((triMax.z - bb.minimum.z) / voxelSize) + 2);
+        // One bucket per (potential) thread
+        std::vector<std::vector<Item>> threadBuckets(numThreads);
+        std::vector<size_t> threadTriangleCounts(numThreads, 0);
 
-                for (int z = zStart; z < zEnd; z++) {
-                    for (int y = yStart; y < yEnd; y++) {
-                        for (int x = xStart; x < xEnd; x++) {
-                            glm::vec3 center = getCorrds(static_cast<size_t>(x),
-                                static_cast<size_t>(y),
-                                static_cast<size_t>(z));
-                            if (triBoxOverlapSchwarzSeidel(center, halfVoxelSize, p0, p1, p2)) {
-                                insert(center);
+        std::vector<std::thread> workers;
+        workers.reserve(numThreads);
+
+        for (unsigned int t = 0; t < numThreads; ++t) {
+            const size_t startTri = t * chunkSize;
+            if (startTri >= numTris)
+                break; // no more work chunks
+
+            const size_t endTri = std::min(numTris, startTri + chunkSize);
+
+            workers.emplace_back([&, t, startTri, endTri]() {
+                auto& localItems = threadBuckets[t];
+                size_t localTriangleCount = 0;
+                localItems.reserve(2048); // heuristic; will grow if needed
+
+                for (size_t triIdx = startTri; triIdx < endTri; ++triIdx) {
+                    const TriRef& ref = triList[triIdx];
+                    const auto& mesh = ObjData.shapes[ref.shapeIndex].mesh;
+                    const size_t i = ref.indexOffset;
+
+                    const tinyobj::index_t i0 = mesh.indices[i];
+                    const tinyobj::index_t i1 = mesh.indices[i + 1];
+                    const tinyobj::index_t i2 = mesh.indices[i + 2];
+
+                    const glm::vec3 p0 = loadPos(i0);
+                    const glm::vec3 p1 = loadPos(i1);
+                    const glm::vec3 p2 = loadPos(i2);
+
+                    const glm::vec3 triMin = glm::min(p0, glm::min(p1, p2));
+                    const glm::vec3 triMax = glm::max(p0, glm::max(p1, p2));
+
+                    const int xStart = std::max(0, static_cast<int>((triMin.x - bb.minimum.x) / voxelSize));
+                    const int yStart = std::max(0, static_cast<int>((triMin.y - bb.minimum.y) / voxelSize));
+                    const int zStart = std::max(0, static_cast<int>((triMin.z - bb.minimum.z) / voxelSize));
+
+                    const int xEnd = std::min(static_cast<int>(width),
+                        static_cast<int>((triMax.x - bb.minimum.x) / voxelSize) + 2);
+                    const int yEnd = std::min(static_cast<int>(height),
+                        static_cast<int>((triMax.y - bb.minimum.y) / voxelSize) + 2);
+                    const int zEnd = std::min(static_cast<int>(depth),
+                        static_cast<int>((triMax.z - bb.minimum.z) / voxelSize) + 2);
+
+                    for (int z = zStart; z < zEnd; ++z) {
+                        for (int y = yStart; y < yEnd; ++y) {
+                            for (int x = xStart; x < xEnd; ++x) {
+                                glm::vec3 center = getCoords(
+                                    static_cast<size_t>(x),
+                                    static_cast<size_t>(y),
+                                    static_cast<size_t>(z));
+
+                                if (triBoxOverlapSchwarzSeidel(center, halfVoxelSize, p0, p1, p2)) {
+                                    Item it;
+                                    it.position = center;
+                                    it.morton = encodePositionToMorton(center);
+                                    localItems.push_back(it);
+                                }
                             }
                         }
                     }
+
+                    ++localTriangleCount;
                 }
 
-                triangleCount++;
-            }
+                threadTriangleCounts[t] = localTriangleCount;
+            });
         }
+
+        // Join all threads
+        for (auto& th : workers) {
+            if (th.joinable())
+                th.join();
+        }
+
+        // Merge thread-local buckets into m_items (single-threaded, safe)
+        size_t totalItems = 0;
+        for (const auto& bucket : threadBuckets)
+            totalItems += bucket.size();
+
+        m_items.reserve(totalItems);
+
+        for (auto& bucket : threadBuckets) {
+            m_items.insert(m_items.end(),
+                std::make_move_iterator(bucket.begin()),
+                std::make_move_iterator(bucket.end()));
+        }
+
+        const size_t triangleCount = std::accumulate(threadTriangleCounts.begin(), threadTriangleCounts.end(), size_t{0});
+
         std::println("Total triangles processed: {}", triangleCount);
-        // Now actually build the Morton octree
+        std::println("Total voxels inserted (before tree build): {}", m_items.size());
+
+        // Now actually build the Morton octree (this already uses parallel sort)
         buildTree();
 
-        std::println("Total voxels inserted: {}", m_items.size());
         std::println("Total octree nodes: {}", m_nodes.size());
     }
 };
