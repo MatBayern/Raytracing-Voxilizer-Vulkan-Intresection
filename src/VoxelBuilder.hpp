@@ -31,7 +31,7 @@ concept DerivedFromVoxelGrid = requires {
     typename Derived::VoxelType;
 };
 
-template <DerivedFromVoxelGrid T, bool inParaell = false>
+template <DerivedFromVoxelGrid T, bool inParaell = true>
 class VoxelBuilder final
 {
 public:
@@ -161,59 +161,40 @@ private:
         return true;
     }
     ///
-    void computeIntersection(size_t depth, size_t height, size_t width, const glm::vec3& halfVoxelSize, const glm::vec3& v0, const glm::vec3& v1, const glm::vec3& v2, T& voxelGrid, const glm::vec3& grid, const glm::vec3& gridMin, MaterialObj material)
+    void computeIntersection(size_t depth, size_t height, size_t width, const glm::vec3& halfVoxelSize, const glm::vec3& v0, const glm::vec3& v1, const glm::vec3& v2, T& voxelGrid,
+        const glm::vec3& grid, // unused but kept for API compatibility
+        const glm::vec3& gridMin,
+        MaterialObj material)
     {
-        // TODO check if thread safe
         // Compute triangle bounding box for optimization
         const glm::vec3 triMin = glm::min(v0, glm::min(v1, v2));
         const glm::vec3 triMax = glm::max(v0, glm::max(v1, v2));
 
-        // Convert to voxel indices with bounds checking
         const float voxelSize = halfVoxelSize.x * 2.0f;
 
         const int xStart = std::max(0, static_cast<int>((triMin.x - gridMin.x) / voxelSize));
         const int yStart = std::max(0, static_cast<int>((triMin.y - gridMin.y) / voxelSize));
         const int zStart = std::max(0, static_cast<int>((triMin.z - gridMin.z) / voxelSize));
 
-        const int xEnd = std::min(static_cast<int>(width), static_cast<int>((triMax.x - gridMin.x) / voxelSize) + 2);
-        const int yEnd = std::min(static_cast<int>(height), static_cast<int>((triMax.y - gridMin.y) / voxelSize) + 2);
-        const int zEnd = std::min(static_cast<int>(depth), static_cast<int>((triMax.z - gridMin.z) / voxelSize) + 2);
+        const int xEnd = std::min(static_cast<int>(width),
+            static_cast<int>((triMax.x - gridMin.x) / voxelSize) + 2);
+        const int yEnd = std::min(static_cast<int>(height),
+            static_cast<int>((triMax.y - gridMin.y) / voxelSize) + 2);
+        const int zEnd = std::min(static_cast<int>(depth),
+            static_cast<int>((triMax.z - gridMin.z) / voxelSize) + 2);
 
-        const int mid = zStart + (zEnd - zStart) / 2;
-        if constexpr (inParaell) {
-
-            // Only check voxels that could potentially intersect the triangle
-            auto worker = [&](int z0, int z1) {
-                for (int z = z0; z < z1; z++) {
-                    for (int y = yStart; y < yEnd; y++) {
-                        for (int x = xStart; x < xEnd; x++) {
-                            if (triBoxOverlap(voxelGrid.getCorrds(x, y, z),
-                                    halfVoxelSize, v0, v1, v2)) {
-                                voxelGrid.setVoxel(x, y, z, material);
-                            }
-                        }
-                    }
-                }
-            };
-
-            std::thread t1(worker, zStart, mid);
-            std::thread t2(worker, mid, zEnd);
-
-            t1.join();
-            t2.join();
-        } else {
-            for (int z = zStart; z < zEnd; z++) {
-                for (int y = yStart; y < yEnd; y++) {
-                    for (int x = xStart; x < xEnd; x++) {
-                        if (triBoxOverlapSchwarzSeidel(voxelGrid.getCorrds(x, y, z),
-                                halfVoxelSize, v0, v1, v2)) {
-                            voxelGrid.setVoxel(x, y, z, material);
-                        }
+        for (int z = zStart; z < zEnd; ++z) {
+            for (int y = yStart; y < yEnd; ++y) {
+                for (int x = xStart; x < xEnd; ++x) {
+                    if (triBoxOverlapSchwarzSeidel(voxelGrid.getCorrds(x, y, z),
+                            halfVoxelSize, v0, v1, v2)) {
+                        voxelGrid.setVoxel(x, y, z, material);
                     }
                 }
             }
         }
     }
+
     BBox computeBboxFromAttrib(const tinyobj::attrib_t& attrib) const noexcept
     {
         BBox bb{};
@@ -382,48 +363,226 @@ public:
 
         size_t triangleCount = 0;
 
-        for (size_t s = 0; s < m_shapes.size(); s++) {
-            const auto& mesh = m_shapes[s].mesh;
-            for (size_t i = 0; i < mesh.indices.size(); i += 3) {
-                
-                if (i + 2 >= mesh.indices.size()) break; // Safety check
-                
-                const int materialId = m_shapes[s].mesh.material_ids[s];
-                MaterialObj material;
-                if (materialId > -1) {
-                    const auto& materialToCopy = m_materials[materialId];
-                    material.ior = materialToCopy.ior;
-                    material.dissolve = materialToCopy.dissolve;
-                    material.shininess = materialToCopy.shininess;
-                    material.illum = materialToCopy.illum;
-                    // VECS
-                    material.ambient = {materialToCopy.ambient[0], materialToCopy.ambient[1], materialToCopy.ambient[2]};
-                    material.diffuse = {materialToCopy.diffuse[0], materialToCopy.diffuse[1], materialToCopy.diffuse[2]};
-                    material.specular = {materialToCopy.specular[0], materialToCopy.specular[1], materialToCopy.specular[2]};
-                    material.transmittance = {materialToCopy.transmittance[0], materialToCopy.transmittance[1], materialToCopy.transmittance[2]};
-                    material.emission = {materialToCopy.emission[0], materialToCopy.emission[1], materialToCopy.emission[2]};
+        // ----------------- SERIAL PATH -----------------
+        if constexpr (!inParaell) {
+            for (size_t s = 0; s < m_shapes.size(); ++s) {
+                const auto& mesh = m_shapes[s].mesh;
 
-                    // material.textureID = materialToCopy.;
+                for (size_t i = 0; i < mesh.indices.size(); i += 3) {
+
+                    if (i + 2 >= mesh.indices.size()) break; // Safety check
+
+                    // NOTE: this is a more correct material lookup:
+                    int materialId = -1;
+                    if (!mesh.material_ids.empty()) {
+                        const size_t faceIndex = i / 3;
+                        if (faceIndex < mesh.material_ids.size()) {
+                            materialId = mesh.material_ids[faceIndex];
+                        }
+                    }
+
+                    MaterialObj material{};
+                    if (materialId > -1 && static_cast<size_t>(materialId) < m_materials.size()) {
+                        const auto& materialToCopy = m_materials[materialId];
+                        material.ior = materialToCopy.ior;
+                        material.dissolve = materialToCopy.dissolve;
+                        material.shininess = materialToCopy.shininess;
+                        material.illum = materialToCopy.illum;
+                        material.ambient = {materialToCopy.ambient[0], materialToCopy.ambient[1], materialToCopy.ambient[2]};
+                        material.diffuse = {materialToCopy.diffuse[0], materialToCopy.diffuse[1], materialToCopy.diffuse[2]};
+                        material.specular = {materialToCopy.specular[0], materialToCopy.specular[1], materialToCopy.specular[2]};
+                        material.transmittance = {materialToCopy.transmittance[0], materialToCopy.transmittance[1], materialToCopy.transmittance[2]};
+                        material.emission = {materialToCopy.emission[0], materialToCopy.emission[1], materialToCopy.emission[2]};
+                    }
+
+                    const tinyobj::index_t i0 = mesh.indices[i];
+                    const tinyobj::index_t i1 = mesh.indices[i + 1];
+                    const tinyobj::index_t i2 = mesh.indices[i + 2];
+
+                    const auto p0 = loadPos(i0);
+                    const auto p1 = loadPos(i1);
+                    const auto p2 = loadPos(i2);
+
+                    computeIntersection(
+                        depth, height, width,
+                        {voxelSize * 0.5f, voxelSize * 0.5f, voxelSize * 0.5f},
+                        p0, p1, p2,
+                        voxelGrid,
+                        bb.center, bb.min,
+                        material);
+
+                    ++triangleCount;
                 }
+            }
 
-                const tinyobj::index_t i0 = mesh.indices[i];
-                const tinyobj::index_t i1 = mesh.indices[i + 1];
-                const tinyobj::index_t i2 = mesh.indices[i + 2];
+            std::println("Total triangles processed: {}", triangleCount);
+            m_materials.shrink_to_fit();
+            return voxelGrid;
+        }
 
-                const auto p0 = loadPos(i0);
-                const auto p1 = loadPos(i1);
-                const auto p2 = loadPos(i2);
+        // ----------------- PARALLEL PATH -----------------
+        // inParaell == true
+        struct TriRef
+        {
+            size_t shapeIndex;
+            size_t indexOffset; // index into mesh.indices (multiple of 3)
+        };
 
-                computeIntersection(depth, height, width,
-                    {voxelSize * 0.5f, voxelSize * 0.5f, voxelSize * 0.5f},
-                    p0, p1, p2, voxelGrid, bb.center, bb.min, material);
+        std::vector<TriRef> triList;
+        triList.reserve(1024);
 
-                triangleCount++;
+        for (size_t s = 0; s < m_shapes.size(); ++s) {
+            const auto& mesh = m_shapes[s].mesh;
+            for (size_t i = 0; i + 2 < mesh.indices.size(); i += 3) {
+                triList.push_back(TriRef{s, i});
             }
         }
+
+        const size_t numTris = triList.size();
+        if (numTris == 0) {
+            std::println("No triangles in OBJ, nothing to voxelize.");
+            m_materials.shrink_to_fit();
+            return voxelGrid;
+        }
+
+        triangleCount = numTris;
+
+        const glm::vec3 halfVoxelSize{
+            voxelSize * 0.5f,
+            voxelSize * 0.5f,
+            voxelSize * 0.5f};
+
+        // We'll compute voxel centers ourselves to avoid touching voxelGrid from threads.
+        auto voxelCenter = [&](int x, int y, int z) {
+            return glm::vec3{
+                bb.min.x + (static_cast<float>(x) + 0.5f) * voxelSize,
+                bb.min.y + (static_cast<float>(y) + 0.5f) * voxelSize,
+                bb.min.z + (static_cast<float>(z) + 0.5f) * voxelSize};
+        };
+
+        // Per-thread voxel hit list
+        struct VoxelHit
+        {
+            uint32_t x, y, z;
+            MaterialObj material;
+        };
+
+        unsigned int hwThreads = std::max(1u, std::thread::hardware_concurrency());
+        unsigned int numThreads = std::min<unsigned int>(
+            hwThreads,
+            static_cast<unsigned int>(std::max<size_t>(1, numTris)));
+
+        std::println("Using {} threads for voxelization over {} triangles.", numThreads, numTris);
+
+        const size_t chunkSize = (numTris + numThreads - 1) / numThreads;
+
+        std::vector<std::vector<VoxelHit>> threadHits(numThreads);
+        std::vector<std::thread> workers;
+        workers.reserve(numThreads);
+
+        for (unsigned int t = 0; t < numThreads; ++t) {
+            const size_t startTri = t * chunkSize;
+            if (startTri >= numTris)
+                break;
+
+            const size_t endTri = std::min(numTris, startTri + chunkSize);
+
+            workers.emplace_back([&, t, startTri, endTri]() {
+                auto& localHits = threadHits[t];
+                localHits.reserve(2048);
+
+                for (size_t triIdx = startTri; triIdx < endTri; ++triIdx) {
+                    const TriRef& ref = triList[triIdx];
+                    const auto& mesh = m_shapes[ref.shapeIndex].mesh;
+                    const size_t i = ref.indexOffset;
+
+                    // material per triangle
+                    int materialId = -1;
+                    if (!mesh.material_ids.empty()) {
+                        const size_t faceIndex = i / 3;
+                        if (faceIndex < mesh.material_ids.size()) {
+                            materialId = mesh.material_ids[faceIndex];
+                        }
+                    }
+
+                    MaterialObj material{};
+                    if (materialId > -1 && static_cast<size_t>(materialId) < m_materials.size()) {
+                        const auto& materialToCopy = m_materials[materialId];
+                        material.ior = materialToCopy.ior;
+                        material.dissolve = materialToCopy.dissolve;
+                        material.shininess = materialToCopy.shininess;
+                        material.illum = materialToCopy.illum;
+                        material.ambient = {materialToCopy.ambient[0], materialToCopy.ambient[1], materialToCopy.ambient[2]};
+                        material.diffuse = {materialToCopy.diffuse[0], materialToCopy.diffuse[1], materialToCopy.diffuse[2]};
+                        material.specular = {materialToCopy.specular[0], materialToCopy.specular[1], materialToCopy.specular[2]};
+                        material.transmittance = {materialToCopy.transmittance[0], materialToCopy.transmittance[1], materialToCopy.transmittance[2]};
+                        material.emission = {materialToCopy.emission[0], materialToCopy.emission[1], materialToCopy.emission[2]};
+                    }
+
+                    const tinyobj::index_t i0 = mesh.indices[i];
+                    const tinyobj::index_t i1 = mesh.indices[i + 1];
+                    const tinyobj::index_t i2 = mesh.indices[i + 2];
+
+                    const glm::vec3 p0 = loadPos(i0);
+                    const glm::vec3 p1 = loadPos(i1);
+                    const glm::vec3 p2 = loadPos(i2);
+
+                    // Same voxel range logic as computeIntersection
+                    const glm::vec3 triMin = glm::min(p0, glm::min(p1, p2));
+                    const glm::vec3 triMax = glm::max(p0, glm::max(p1, p2));
+
+                    const float vSize = voxelSize;
+
+                    const int xStart = std::max(0, static_cast<int>((triMin.x - bb.min.x) / vSize));
+                    const int yStart = std::max(0, static_cast<int>((triMin.y - bb.min.y) / vSize));
+                    const int zStart = std::max(0, static_cast<int>((triMin.z - bb.min.z) / vSize));
+
+                    const int xEnd = std::min(static_cast<int>(width),
+                        static_cast<int>((triMax.x - bb.min.x) / vSize) + 2);
+                    const int yEnd = std::min(static_cast<int>(height),
+                        static_cast<int>((triMax.y - bb.min.y) / vSize) + 2);
+                    const int zEnd = std::min(static_cast<int>(depth),
+                        static_cast<int>((triMax.z - bb.min.z) / vSize) + 2);
+
+                    for (int z = zStart; z < zEnd; ++z) {
+                        for (int y = yStart; y < yEnd; ++y) {
+                            for (int x = xStart; x < xEnd; ++x) {
+                                glm::vec3 center = voxelCenter(x, y, z);
+                                if (triBoxOverlapSchwarzSeidel(center, halfVoxelSize, p0, p1, p2)) {
+                                    VoxelHit hit;
+                                    hit.x = static_cast<uint32_t>(x);
+                                    hit.y = static_cast<uint32_t>(y);
+                                    hit.z = static_cast<uint32_t>(z);
+                                    hit.material = material;
+                                    localHits.push_back(hit);
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        for (auto& th : workers) {
+            if (th.joinable())
+                th.join();
+        }
+
+        // Apply hits to voxelGrid (single-threaded, no data races)
+        size_t totalHits = 0;
+        for (const auto& bucket : threadHits)
+            totalHits += bucket.size();
+
+        std::println("Total voxel hits collected: {}", totalHits);
+
+        for (const auto& bucket : threadHits) {
+            for (const auto& hit : bucket) {
+                voxelGrid.setVoxel(hit.x, hit.y, hit.z, hit.material);
+            }
+        }
+
         std::println("Total triangles processed: {}", triangleCount);
         m_materials.shrink_to_fit();
-
         return voxelGrid;
     }
 };
