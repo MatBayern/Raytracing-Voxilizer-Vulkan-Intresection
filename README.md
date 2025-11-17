@@ -5,7 +5,7 @@ Vulkan RayTracing Intersection + voxelization project for my **Bachelor’s Thes
 Built on top of:
 
 - [nvpro-samples / nvpro_core](https://github.com/nvpro-samples/nvpro_core)
-- [[vk_raytracing_tutorial_KHR](https://github.com/nvpro-samples/vk_raytracing_tutorial_KHR)]
+- [vk_raytracing_tutorial_KHR](https://github.com/nvpro-samples/vk_raytracing_tutorial_KHR)]
 - [tinyobjloader](https://github.com/tinyobjloader/tinyobjloader)
 
 
