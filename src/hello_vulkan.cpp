@@ -669,9 +669,9 @@ auto HelloVulkan::AABBToVkGeometryKHR()
 void HelloVulkan::createAABB(const std::string& path, float voxleSize)
 {
     /*
-    VoxelBuilder<VoxelGridBool> voxelBuilder{std::filesystem::path(path)};
+    VoxelBuilder<VoxelGridVec, false> voxelBuilder{std::filesystem::path(path)};
     const auto startVoxelGrid = std::chrono::high_resolution_clock::now();
-    VoxelGridBool vox = voxelBuilder.buildVoxelGrid(voxleSize);
+    VoxelGridVec vox = voxelBuilder.buildVoxelGrid(voxleSize);
     const auto stopVoxelGrid = std::chrono::high_resolution_clock::now();
 
     const auto startAabb = std::chrono::high_resolution_clock::now();
@@ -698,6 +698,7 @@ void HelloVulkan::createAABB(const std::string& path, float voxleSize)
 
     const std::vector<Aabb> aabbs = tree.getAabbs();
     std::vector<int> idx(aabbs.size(), 0);
+
     m_aabbsSize = static_cast<uint32_t>(aabbs.size());
 
     // Creating all buffers
