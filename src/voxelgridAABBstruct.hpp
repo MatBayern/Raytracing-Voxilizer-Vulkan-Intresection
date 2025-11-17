@@ -1,5 +1,6 @@
 #pragma once
 #include "obj_loader.h"
+#include "voxelgrid.hpp"
 #include "shaders/host_device.h"
 #include <glm/glm.hpp>
 namespace {
