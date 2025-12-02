@@ -460,23 +460,13 @@ public:
                 bb.min.z + (static_cast<float>(z) + 0.5f) * voxelSize};
         };
 
-        // Per-thread voxel hit list
-        struct VoxelHit
-        {
-            uint32_t x, y, z;
-            MaterialObj material;
-        };
-
-        unsigned int hwThreads = std::max(1u, std::thread::hardware_concurrency());
-        unsigned int numThreads = std::min<unsigned int>(
-            hwThreads,
-            static_cast<unsigned int>(std::max<size_t>(1, numTris)));
+        unsigned int numThreads = std::max(1u, std::thread::hardware_concurrency());
 
         std::println("Using {} threads for voxelization over {} triangles.", numThreads, numTris);
 
         const size_t chunkSize = (numTris + numThreads - 1) / numThreads;
 
-        std::vector<std::vector<VoxelHit>> threadHits(numThreads);
+        std::vector<std::vector<glm::uvec3>> threadHits(numThreads);
         std::vector<std::thread> workers;
         workers.reserve(numThreads);
 
@@ -549,12 +539,8 @@ public:
                             for (int x = xStart; x < xEnd; ++x) {
                                 glm::vec3 center = voxelCenter(x, y, z);
                                 if (triBoxOverlapSchwarzSeidel(center, halfVoxelSize, p0, p1, p2)) {
-                                    VoxelHit hit;
-                                    hit.x = static_cast<uint32_t>(x);
-                                    hit.y = static_cast<uint32_t>(y);
-                                    hit.z = static_cast<uint32_t>(z);
-                                    hit.material = material;
-                                    localHits.push_back(hit);
+
+                                    localHits.emplace_back(x, y, z);
                                 }
                             }
                         }
@@ -577,7 +563,7 @@ public:
 
         for (const auto& bucket : threadHits) {
             for (const auto& hit : bucket) {
-                voxelGrid.setVoxel(hit.x, hit.y, hit.z, hit.material);
+                voxelGrid.setVoxel(hit.x, hit.y, hit.z);
             }
         }
 
