@@ -530,13 +530,6 @@ public:
                 th.join();
         }
 
-        // Apply hits to voxelGrid (single-threaded, no data races)
-        size_t totalHits = 0;
-        for (const auto& bucket : threadHits)
-            totalHits += bucket.size();
-
-        std::println("Total voxel hits collected: {}", totalHits);
-
         for (const auto& bucket : threadHits) {
             for (const auto& hit : bucket) {
                 voxelGrid.setVoxel(hit.x, hit.y, hit.z);
