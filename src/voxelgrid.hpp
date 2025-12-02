@@ -29,9 +29,9 @@ protected:
 
     //
     std::vector<MaterialObj> m_materials;
-    std::vector<int> m_matIdx;
+    std::vector<int16_t> m_matIdx;
     std::vector<T> m_voxel;
-    std::unordered_map<MaterialObj, int> m_materialMap;
+    std::unordered_map<MaterialObj, int16_t> m_materialMap;
 
     // Helpers
     constexpr size_t map3dto1d(size_t x, size_t y, size_t z) const noexcept
@@ -76,9 +76,9 @@ public:
         return m_materials;
     }
 
-    std::vector<int> getMatIdx() const noexcept
+    std::vector<int16_t> getMatIdx() const noexcept
     {
-        std::vector<int> ret;
+        std::vector<int16_t> ret;
         ret.reserve(m_materials.size());
 
         for (size_t i = 0; i < m_matIdx.size(); i++) {
