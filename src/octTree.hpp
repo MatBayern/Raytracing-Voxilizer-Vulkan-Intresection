@@ -130,6 +130,18 @@ private:
         }
     };
 
+    size_t estimateMaxItemsPerLeaf(size_t numItems) const noexcept
+    {
+        // Aim for roughly ~1000 leaves, clamp to sane ranges.
+        // Larger scenes → larger leaves.
+        if (numItems == 0) return 64; // fallback
+
+        size_t k = numItems / 1000; // target items per leaf
+        if (k < 32) k = 32; // lower bound
+        if (k > 512) k = 512; // upper bound
+        return k;
+    }
+
     static constexpr std::uint32_t INVALID_INDEX = std::numeric_limits<std::uint32_t>::max();
 
     // Tree data
@@ -409,10 +421,7 @@ private:
     }
 
 public:
-    explicit Octree(const std::filesystem::path& path,
-        float voxSize,
-        size_t maxItemsPerLeaf = 8)
-        : m_maxItems(maxItemsPerLeaf)
+    explicit Octree(const std::filesystem::path& path, float voxSize)
     {
         // We support up to 21 levels (Morton 21 bits per axis)
 
@@ -573,6 +582,7 @@ private:
         }
 
         const size_t numTris = triList.size();
+
         if (numTris == 0) {
             std::println("No triangles in OBJ, nothing to voxelize.");
             return;
@@ -680,6 +690,7 @@ private:
         std::println("Total triangles processed: {}", triangleCount);
         std::println("Total voxels inserted (before tree build): {}", m_items.size());
 
+        m_maxItems = estimateMaxItemsPerLeaf(m_items.size());
         // Now actually build the Morton octree (this already uses parallel sort)
         buildTree();
         m_nodes.shrink_to_fit();
