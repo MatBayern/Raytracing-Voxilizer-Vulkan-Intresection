@@ -372,7 +372,6 @@ public:
 
                     if (i + 2 >= mesh.indices.size()) break; // Safety check
 
-                    // NOTE: this is a more correct material lookup:
                     int materialId = -1;
                     if (!mesh.material_ids.empty()) {
                         const size_t faceIndex = i / 3;
@@ -485,29 +484,6 @@ public:
                     const TriRef& ref = triList[triIdx];
                     const auto& mesh = m_shapes[ref.shapeIndex].mesh;
                     const size_t i = ref.indexOffset;
-
-                    // material per triangle
-                    int materialId = -1;
-                    if (!mesh.material_ids.empty()) {
-                        const size_t faceIndex = i / 3;
-                        if (faceIndex < mesh.material_ids.size()) {
-                            materialId = mesh.material_ids[faceIndex];
-                        }
-                    }
-
-                    MaterialObj material{};
-                    if (materialId > -1 && static_cast<size_t>(materialId) < m_materials.size()) {
-                        const auto& materialToCopy = m_materials[materialId];
-                        material.ior = materialToCopy.ior;
-                        material.dissolve = materialToCopy.dissolve;
-                        material.shininess = materialToCopy.shininess;
-                        material.illum = materialToCopy.illum;
-                        material.ambient = {materialToCopy.ambient[0], materialToCopy.ambient[1], materialToCopy.ambient[2]};
-                        material.diffuse = {materialToCopy.diffuse[0], materialToCopy.diffuse[1], materialToCopy.diffuse[2]};
-                        material.specular = {materialToCopy.specular[0], materialToCopy.specular[1], materialToCopy.specular[2]};
-                        material.transmittance = {materialToCopy.transmittance[0], materialToCopy.transmittance[1], materialToCopy.transmittance[2]};
-                        material.emission = {materialToCopy.emission[0], materialToCopy.emission[1], materialToCopy.emission[2]};
-                    }
 
                     const tinyobj::index_t i0 = mesh.indices[i];
                     const tinyobj::index_t i1 = mesh.indices[i + 1];
