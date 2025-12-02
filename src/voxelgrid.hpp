@@ -56,7 +56,6 @@ public:
           m_org(org),
           m_voxelSize(voxelSize),
           m_voxelDiameter(std::sqrt(3.f * m_voxelSize * m_voxelSize)),
-          m_voxel(x * y * z, T{}),
           m_matIdx(x * y * z, -1)
     {
         m_materials.reserve(16);

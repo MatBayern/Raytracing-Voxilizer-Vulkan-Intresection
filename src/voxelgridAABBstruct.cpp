@@ -1,8 +1,10 @@
-#include "voxelgridAABBstruct.hpp"
 #include "voxelgrid.hpp"
+#include "voxelgridAABBstruct.hpp"
+
 
 VoxelGridAABBstruct::VoxelGridAABBstruct(size_t x, size_t y, size_t z, float voxelSize, vec3 org) : VoxelGrid(x, y, z, voxelSize, org)
 {
+    m_voxel.resize(x * y * z);
 }
 
 std::vector<Aabb> VoxelGridAABBstruct::getAabbs() const noexcept

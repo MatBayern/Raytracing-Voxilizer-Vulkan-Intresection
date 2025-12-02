@@ -9,8 +9,7 @@
 
 VoxelGridVec::VoxelGridVec(size_t x, size_t y, size_t z, float voxelSize, vec3 org) : VoxelGrid(x, y, z, voxelSize, org)
 {
-    m_voxel.resize(0);
-    m_voxel.reserve(0);
+    m_voxel.reserve(512); // heuristic
 
 }
 

@@ -10,6 +10,9 @@
 
 VoxelGridBool::VoxelGridBool(size_t x, size_t y, size_t z, float voxelSize, vec3 org) : VoxelGrid(x, y, z, voxelSize, org)
 {
+    const size_t totalVoxels = m_x * m_y * m_z;
+    const size_t totalInts = (totalVoxels + ((sizeof(VoxelType) * 8) - 1)) / (sizeof(VoxelType) * 8); // ceil
+    m_voxel.resize(totalInts, VoxelType{});
 }
 
 std::vector<Aabb> VoxelGridBool::getAabbs() const noexcept
