@@ -118,14 +118,10 @@ private:
         // AABB is no longer stored per node to save memory.
         std::array<std::uint32_t, 8> children{}; // indices into m_nodes, or INVALID
 
-        // indices into m_nodes, or INVALID. We have to use a std::vector otherwise can be stackoverflows since arrays are on the stack the problem that
-        // we have to acess which is way slower
-        // std::vector<std::uint32_t> children{INVALID_INDEX, INVALID_INDEX, INVALID_INDEX, INVALID_INDEX, INVALID_INDEX, INVALID_INDEX, INVALID_INDEX, INVALID_INDEX};
         std::uint32_t start = 0; // start index into m_items
         std::uint32_t count = 0; // number of items in this subtree
-        std::uint8_t depth = 0; // tree depth (0 = root)
 
-        bool isLeaf() const
+        constexpr bool isLeaf() const noexcept
         {
             for (auto c : children) {
                 if (c != INVALID_INDEX) return false;
@@ -172,7 +168,7 @@ private:
         ObjMesh mesh;
         mesh.attrib = reader.GetAttrib();
         mesh.shapes = reader.GetShapes();
-        return mesh; // NRVO / move
+        return mesh; // NRVO
     }
 
     // Map a world-space position into [0, 2^maxDepth-1]^3 and then to a Morton code
@@ -210,7 +206,6 @@ private:
 
         m_nodes[nodeIndex].start = begin;
         m_nodes[nodeIndex].count = end - begin;
-        m_nodes[nodeIndex].depth = depth;
         m_nodes[nodeIndex].children.fill(INVALID_INDEX);
 
         if (depth >= m_maxDepth || m_nodes[nodeIndex].count <= m_maxItems) {
@@ -607,7 +602,7 @@ private:
             workers.emplace_back([&, t, startTri, endTri]() {
                 auto& localItems = threadBuckets[t];
                 size_t localTriangleCount = 0;
-                localItems.reserve(2048); // heuristic; will grow if needed
+                localItems.reserve(256); // heuristic; will grow if needed
 
                 for (size_t triIdx = startTri; triIdx < endTri; ++triIdx) {
                     const TriRef& ref = triList[triIdx];
@@ -687,6 +682,8 @@ private:
 
         // Now actually build the Morton octree (this already uses parallel sort)
         buildTree();
+        m_nodes.shrink_to_fit();
+        m_items.shrink_to_fit();
 
         std::println("Total octree nodes: {}", m_nodes.size());
     }
