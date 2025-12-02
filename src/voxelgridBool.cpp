@@ -19,7 +19,7 @@ std::vector<Aabb> VoxelGridBool::getAabbs() const noexcept
     const float half = 0.5f * m_voxelSize;
 
     const size_t totalVoxels = m_x * m_y * m_z;
-    const size_t totalInts = (totalVoxels + 31) / 32; // ceil
+    const size_t totalInts = (totalVoxels + ((sizeof(VoxelType) * 8) - 1)) / (sizeof(VoxelType) * 8); // ceil
 
     for (size_t intIdx = 0; intIdx < totalInts; intIdx++) {
         unsigned int intVal = m_voxel[intIdx];
@@ -29,7 +29,7 @@ std::vector<Aabb> VoxelGridBool::getAabbs() const noexcept
         // Process each set bit in this int
         while (intVal != 0) {
             const int trailingZeros = std::countr_zero(intVal);
-            const size_t i = intIdx * 32 + trailingZeros;
+            const size_t i = intIdx * (sizeof(VoxelType) * 8) + trailingZeros;
 
             if (i < totalVoxels) {
                 const glm::vec3 gridCords = map1dto3d(i);
@@ -44,6 +44,7 @@ std::vector<Aabb> VoxelGridBool::getAabbs() const noexcept
             intVal &= ~(1u << trailingZeros);
         }
     }
+    ret.shrink_to_fit();
     return ret;
 }
 
@@ -55,8 +56,8 @@ void VoxelGridBool::setVoxel(size_t x, size_t y, size_t z, const MaterialObj& ma
     }
 
     const size_t idx = map3dto1d(x, y, z);
-    const size_t intIdx = idx / 32; // Which int
-    const size_t bitIdx = idx % 32; // Which bit in that int
+    const size_t intIdx = idx / (sizeof(VoxelType) * 8); // Which int
+    const size_t bitIdx = idx % (sizeof(VoxelType) * 8); // Which bit in that int
     addMatrialIfNeeded(idx, material);
 
     m_voxel[intIdx] |= (1u << bitIdx);

@@ -31,7 +31,7 @@ concept DerivedFromVoxelGrid = requires {
     typename Derived::VoxelType;
 };
 
-template <DerivedFromVoxelGrid T, bool inParaell = true>
+template <DerivedFromVoxelGrid T, bool inParaell = false>
 class VoxelBuilder final
 {
 public:

@@ -1,6 +1,5 @@
-#include "voxelgrid.hpp"
 #include "voxelgridAABBstruct.hpp"
-
+#include "voxelgrid.hpp"
 
 VoxelGridAABBstruct::VoxelGridAABBstruct(size_t x, size_t y, size_t z, float voxelSize, vec3 org) : VoxelGrid(x, y, z, voxelSize, org)
 {
@@ -13,14 +12,11 @@ std::vector<Aabb> VoxelGridAABBstruct::getAabbs() const noexcept
     // Remove all unset Voxels
     for (const auto& voxel : m_voxel) {
         if (voxel.isUsed) {
-            Aabb tmp{};
-            tmp.maximum = voxel.maximum;
-            tmp.minimum = voxel.minimum;
 
-            aabbVector.push_back(tmp);
+            aabbVector.emplace_back(voxel.minimum, voxel.maximum); // min max
         }
     }
-
+    aabbVector.shrink_to_fit();
     return aabbVector;
 }
 void VoxelGridAABBstruct::setVoxel(size_t x, size_t y, size_t z, const MaterialObj& material)
@@ -33,14 +29,14 @@ void VoxelGridAABBstruct::setVoxel(size_t x, size_t y, size_t z, const MaterialO
     addMatrialIfNeeded(idx, material);
 
     // Treat voxelSize as cube edge length we assume this are the center corrdinates
-    
+
     const glm::vec3 pos{x, y, z};
 
     const glm::vec3 aabbVector = m_org + ((pos + 0.5f) * m_voxelSize);
-     const float half = 0.5f * m_voxelSize;
-    
+    const float half = 0.5f * m_voxelSize;
+
     AabbInternal aabbTmp;
-    
+
     aabbTmp.minimum = aabbVector - half;
     aabbTmp.maximum = aabbVector + half;
     aabbTmp.isUsed = true;
