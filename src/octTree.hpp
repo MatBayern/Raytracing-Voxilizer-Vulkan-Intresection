@@ -71,22 +71,25 @@ private:
         glm::vec3 cmax = max;
 
         // X
-        if (octant & 1)
+        if (octant & 1) {
             cmin.x = center.x;
-        else
+        } else {
             cmax.x = center.x;
+        }
 
         // Y
-        if (octant & 2)
+        if (octant & 2) {
             cmin.y = center.y;
-        else
+        } else {
             cmax.y = center.y;
+        }
 
         // Z
-        if (octant & 4)
+        if (octant & 4) {
             cmin.z = center.z;
-        else
+        } else {
             cmax.z = center.z;
+        }
 
         return {cmin, cmax};
     }

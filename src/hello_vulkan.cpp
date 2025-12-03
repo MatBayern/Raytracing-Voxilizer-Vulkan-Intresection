@@ -669,35 +669,35 @@ auto HelloVulkan::AABBToVkGeometryKHR()
 void HelloVulkan::createAABB(const std::string& path, float voxleSize)
 {
 
-    VoxelBuilder<VoxelGridVec, true> voxelBuilder{std::filesystem::path(path)};
-    const auto startVoxelGrid = std::chrono::high_resolution_clock::now();
-    VoxelGridVec vox = voxelBuilder.buildVoxelGrid(voxleSize);
-    const auto stopVoxelGrid = std::chrono::high_resolution_clock::now();
+    /* VoxelBuilder<VoxelGridVec, true> voxelBuilder{std::filesystem::path(path)};
+     const auto startVoxelGrid = std::chrono::high_resolution_clock::now();
+     VoxelGridVec vox = voxelBuilder.buildVoxelGrid(voxleSize);
+     const auto stopVoxelGrid = std::chrono::high_resolution_clock::now();
 
-    const auto startAabb = std::chrono::high_resolution_clock::now();
-    const std::vector<Aabb> aabbs = vox.getAabbs();
-    const auto stopAabb = std::chrono::high_resolution_clock::now();
-
-    std::vector<MaterialObj> matobj = vox.getMatrials();
-    std::vector<int16_t> idx = vox.getMatIdx();
-
-    std::println("Voxel build took {}", std::chrono::duration_cast<std::chrono::milliseconds>(stopVoxelGrid - startVoxelGrid));
-    std::println("Aabb build took {}", std::chrono::duration_cast<std::chrono::milliseconds>(stopAabb - startAabb));
-    std::println("Total usage of the VoxelGridBool is {}", vox.getMemoryUsageBytes());
-
-    /* const auto startAabb = std::chrono::high_resolution_clock::now();
-     Octree tree{std::filesystem::path(path), voxleSize};
+     const auto startAabb = std::chrono::high_resolution_clock::now();
+     const std::vector<Aabb> aabbs = vox.getAabbs();
      const auto stopAabb = std::chrono::high_resolution_clock::now();
 
-     MaterialObj mat;
-     std::vector<MaterialObj> matobj{mat};
+     std::vector<MaterialObj> matobj = vox.getMatrials();
+     std::vector<int16_t> idx = vox.getMatIdx();
 
-     std::println("Total usage of the Octree is {}", tree.getMemoryUsageBytes());
+     std::println("Voxel build took {}", std::chrono::duration_cast<std::chrono::milliseconds>(stopVoxelGrid - startVoxelGrid));
      std::println("Aabb build took {}", std::chrono::duration_cast<std::chrono::milliseconds>(stopAabb - startAabb));
+     std::println("Total usage of the VoxelGridBool is {}", vox.getMemoryUsageBytes());*/
 
-     const std::vector<Aabb> aabbs = tree.getAabbs();
-     std::vector<int> idx(aabbs.size(), 0);
-     */
+    const auto startAabb = std::chrono::high_resolution_clock::now();
+    Octree tree{std::filesystem::path(path), voxleSize};
+    const auto stopAabb = std::chrono::high_resolution_clock::now();
+
+    MaterialObj mat;
+    std::vector<MaterialObj> matobj{mat};
+
+    std::println("Total usage of the Octree is {}", tree.getMemoryUsageBytes());
+    std::println("Aabb build took {}", std::chrono::duration_cast<std::chrono::milliseconds>(stopAabb - startAabb));
+
+    const std::vector<Aabb> aabbs = tree.getAabbs();
+    std::vector<int16_t> idx(aabbs.size(), 0);
+
     m_aabbsSize = static_cast<uint32_t>(aabbs.size());
 
     // Creating all buffers
