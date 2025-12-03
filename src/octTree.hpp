@@ -5,6 +5,7 @@
 #include <glm/glm.hpp>
 
 // STD
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdint>
@@ -21,59 +22,6 @@
  *  Stack size needs to be increaed for this to work !!!
  *
  */
-//=========================================================
-// Basic AABB utilities for your Aabb struct
-//=========================================================
-inline glm::vec3 aabbCenter(const Aabb& b)
-{
-    return (b.minimum + b.maximum) * 0.5f;
-}
-
-inline glm::vec3 aabbHalfSize(const Aabb& b)
-{
-    return (b.maximum - b.minimum) * 0.5f;
-}
-
-inline bool aabbContains(const Aabb& b, const glm::vec3& p)
-{
-    return glm::all(glm::lessThanEqual(b.minimum, p)) && glm::all(glm::lessThanEqual(p, b.maximum));
-}
-
-inline bool aabbIntersects(const Aabb& a, const Aabb& b)
-{
-    return (a.minimum.x <= b.maximum.x && a.maximum.x >= b.minimum.x) && (a.minimum.y <= b.maximum.y && a.maximum.y >= b.minimum.y) && (a.minimum.z <= b.maximum.z && a.maximum.z >= b.minimum.z);
-}
-
-// Create a sub AABB from parent + octant index (0..7)
-inline Aabb makeChildAabb(const Aabb& parent, int octant)
-{
-    glm::vec3 center = aabbCenter(parent);
-    glm::vec3 min = parent.minimum;
-    glm::vec3 max = parent.maximum;
-
-    glm::vec3 cmin = min;
-    glm::vec3 cmax = max;
-
-    // X
-    if (octant & 1)
-        cmin.x = center.x;
-    else
-        cmax.x = center.x;
-
-    // Y
-    if (octant & 2)
-        cmin.y = center.y;
-    else
-        cmax.y = center.y;
-
-    // Z
-    if (octant & 4)
-        cmin.z = center.z;
-    else
-        cmax.z = center.z;
-
-    return {cmin, cmax};
-}
 
 //=========================================================
 // OCTREE (Morton-code, flat node array)
@@ -84,11 +32,64 @@ public:
     using MortonCode = std::uint64_t;
     struct Item
     {
-        glm::vec3 position; // world-space position (voxel center)
+        // glm::vec3 position; // world-space position (voxel center)
         MortonCode morton; // morton code in [0, 2^(3*maxDepth) )
     };
 
 private:
+    //=========================================================
+    // Basic AABB utilities for your Aabb struct
+    //=========================================================
+    constexpr glm::vec3 aabbCenter(const Aabb& b) const noexcept
+    {
+        return (b.minimum + b.maximum) * 0.5f;
+    }
+
+    constexpr glm::vec3 aabbHalfSize(const Aabb& b) const noexcept
+    {
+        return (b.maximum - b.minimum) * 0.5f;
+    }
+
+    constexpr bool aabbContains(const Aabb& b, const glm::vec3& p) const noexcept
+    {
+        return glm::all(glm::lessThanEqual(b.minimum, p)) && glm::all(glm::lessThanEqual(p, b.maximum));
+    }
+
+    constexpr bool aabbIntersects(const Aabb& a, const Aabb& b) const noexcept
+    {
+        return (a.minimum.x <= b.maximum.x && a.maximum.x >= b.minimum.x) && (a.minimum.y <= b.maximum.y && a.maximum.y >= b.minimum.y) && (a.minimum.z <= b.maximum.z && a.maximum.z >= b.minimum.z);
+    }
+
+    // Create a sub AABB from parent + octant index (0..7)
+    constexpr Aabb makeChildAabb(const Aabb& parent, int octant) const noexcept
+    {
+        glm::vec3 center = aabbCenter(parent);
+        glm::vec3 min = parent.minimum;
+        glm::vec3 max = parent.maximum;
+
+        glm::vec3 cmin = min;
+        glm::vec3 cmax = max;
+
+        // X
+        if (octant & 1)
+            cmin.x = center.x;
+        else
+            cmax.x = center.x;
+
+        // Y
+        if (octant & 2)
+            cmin.y = center.y;
+        else
+            cmax.y = center.y;
+
+        // Z
+        if (octant & 4)
+            cmin.z = center.z;
+        else
+            cmax.z = center.z;
+
+        return {cmin, cmax};
+    }
     //=========================================================
     // Morton code utilities
     //=========================================================
@@ -113,6 +114,37 @@ private:
         return xx | yy | zz;
     }
 
+    constexpr std::uint32_t compactBits(MortonCode v) const noexcept
+    {
+        v &= 0x1249249249249249ULL;
+        v = (v ^ (v >> 2)) & 0x10c30c30c30c30c3ULL;
+        v = (v ^ (v >> 4)) & 0x100f00f00f00f00fULL;
+        v = (v ^ (v >> 8)) & 0x1f0000ff0000ffULL;
+        v = (v ^ (v >> 16)) & 0x1f00000000ffffULL;
+        v = (v ^ (v >> 32)) & 0x1fffffULL; // 21 bits back
+        return static_cast<std::uint32_t>(v);
+    }
+
+    // Decode a Morton code back to integer voxel indices
+    glm::uvec3 decodeMortonToVoxel(MortonCode morton) const noexcept
+    {
+        const std::uint32_t ix = compactBits(morton);
+        const std::uint32_t iy = compactBits(morton >> 1);
+        const std::uint32_t iz = compactBits(morton >> 2);
+        return glm::uvec3(ix, iy, iz);
+    }
+
+    glm::vec3 voxelIndexToCenter(const glm::uvec3& idx) const noexcept
+    {
+        return m_rootBounds.minimum + (glm::vec3(idx) + 0.5f) * m_VoxelSize;
+    }
+
+    glm::vec3 decodeMortonToPosition(MortonCode morton) const noexcept
+    {
+        glm::uvec3 idx = decodeMortonToVoxel(morton);
+        return voxelIndexToCenter(idx);
+    }
+
     struct Node
     {
         // AABB is no longer stored per node to save memory.
@@ -130,18 +162,6 @@ private:
         }
     };
 
-    size_t estimateMaxItemsPerLeaf(size_t numItems) const noexcept
-    {
-        // Aim for roughly ~1000 leaves, clamp to sane ranges.
-        // Larger scenes → larger leaves.
-        if (numItems == 0) return 64; // fallback
-
-        size_t k = numItems / 1000; // target items per leaf
-        if (k < 32) k = 32; // lower bound
-        if (k > 512) k = 512; // upper bound
-        return k;
-    }
-
     static constexpr std::uint32_t INVALID_INDEX = std::numeric_limits<std::uint32_t>::max();
 
     // Tree data
@@ -150,9 +170,10 @@ private:
 
     Aabb m_rootBounds{};
     size_t m_maxItems;
-    size_t m_maxDepth;
+    size_t m_maxDepth = 0; // number of octree levels actually used
+    std::uint32_t m_bitsPerAxis = 0; // number of Morton bits per axis in use
 
-    glm::vec3 m_halfVoxelSize{0.0f};
+    const float m_VoxelSize;
     // OBJ data
     struct ObjMesh
     {
@@ -181,30 +202,6 @@ private:
         mesh.attrib = reader.GetAttrib();
         mesh.shapes = reader.GetShapes();
         return mesh; // NRVO
-    }
-
-    // Map a world-space position into [0, 2^maxDepth-1]^3 and then to a Morton code
-    MortonCode encodePositionToMorton(const glm::vec3& pos) const noexcept
-    {
-        glm::vec3 size = m_rootBounds.maximum - m_rootBounds.minimum;
-        // Avoid division by zero; clamp degenerate axes
-        if (size.x == 0.0f) size.x = 1.0f;
-        if (size.y == 0.0f) size.y = 1.0f;
-        if (size.z == 0.0f) size.z = 1.0f;
-
-        glm::vec3 rel = (pos - m_rootBounds.minimum) / size;
-
-        const float gridMaxF = static_cast<float>((1u << m_maxDepth) - 1u);
-
-        auto clamp01 = [](float v) {
-            return std::max(0.0f, std::min(1.0f, v));
-        };
-
-        const std::uint32_t ix = static_cast<std::uint32_t>(clamp01(rel.x) * gridMaxF + 0.5f);
-        const std::uint32_t iy = static_cast<std::uint32_t>(clamp01(rel.y) * gridMaxF + 0.5f);
-        const std::uint32_t iz = static_cast<std::uint32_t>(clamp01(rel.z) * gridMaxF + 0.5f);
-
-        return morton3D(ix, iy, iz);
     }
 
     // Recursive build of nodes over sorted m_items
@@ -282,7 +279,7 @@ private:
             const std::uint32_t end = node.start + node.count;
             for (std::uint32_t i = node.start; i < end; ++i) {
                 const Item& it = m_items[i];
-                if (aabbContains(range, it.position))
+                if (aabbContains(range, decodeMortonToPosition(it.morton)))
                     out->push_back(it);
             }
         } else {
@@ -304,7 +301,8 @@ private:
             const std::uint32_t end = node.start + node.count;
             for (std::uint32_t i = node.start; i < end; ++i) {
                 const Item& it = m_items[i];
-                out->emplace_back(it.position - m_halfVoxelSize, it.position + m_halfVoxelSize); // min max
+                const auto pos = decodeMortonToPosition(it.morton);
+                out->emplace_back(pos - (m_VoxelSize * 0.5f), pos + (m_VoxelSize * 0.5f)); // min max
             }
         } else {
             for (int c = 0; c < 8; ++c) {
@@ -421,25 +419,27 @@ private:
     }
 
 public:
-    explicit Octree(const std::filesystem::path& path, float voxSize)
+    explicit Octree(const std::filesystem::path& path,
+        float voxSize,
+        size_t maxItemsPerLeaf = 16)
+        : m_maxItems(maxItemsPerLeaf),
+          m_VoxelSize(voxSize)
     {
-        // We support up to 21 levels (Morton 21 bits per axis)
-
         ObjMesh mesh = readObjFile(path);
 
+        // Initial bounds from geometry; will be expanded to match the Morton grid
         m_rootBounds = computeBboxFromAttrib(mesh.attrib);
-        m_maxDepth = static_cast<size_t>(std::log2(std::ceil((m_rootBounds.maximum.x - m_rootBounds.minimum.x) / voxSize)) + 2);
 
-        if (m_maxDepth > 21) {
-            throw std::runtime_error("We support up to 21 levels (Morton 21 bits per axis)!");
-        }
-
+        // m_bitsPerAxis and m_maxDepth are computed inside buildVoxelGrid()
         buildVoxelGrid(voxSize, mesh);
     }
 
     std::vector<Aabb> getAabbs() const
     {
         std::vector<Aabb> ret;
+        if (m_nodes.empty()) {
+            return ret;
+        }
         traverseNodesRawRecursive(0, &ret);
         return ret;
     }
@@ -463,18 +463,6 @@ public:
     Octree& operator=(Octree&&) noexcept = default;
 
 private:
-    // Insert a point (voxel center) into the octree
-    bool insert(const glm::vec3& pos)
-    {
-        if (!aabbContains(m_rootBounds, pos)) {
-            return false;
-        }
-
-        m_items.emplace_back(pos, encodePositionToMorton(pos)); // pos morton
-
-        return true;
-    }
-
     // Query items inside range
     void query(const Aabb& range, std::vector<Item>* out)
     {
@@ -525,7 +513,6 @@ private:
     void buildVoxelGrid(float voxelSize, const ObjMesh& ObjData)
     {
         const auto bb = computeBboxFromAttrib(ObjData.attrib);
-        m_rootBounds = bb;
 
         const size_t width = static_cast<size_t>(std::ceil((bb.maximum.x - bb.minimum.x) / voxelSize));
         const size_t height = static_cast<size_t>(std::ceil((bb.maximum.y - bb.minimum.y) / voxelSize));
@@ -533,6 +520,31 @@ private:
 
         std::println("Grid dimensions: {}x{}x{}", width, height, depth);
         std::println("Voxel size: {}", voxelSize);
+
+        // If there is literally no extent, there is nothing to voxelize
+        const size_t maxDim = std::max(width, std::max(height, depth));
+        if (maxDim == 0) {
+            std::println("Empty voxel grid (zero extent).");
+            return;
+        }
+
+        // Number of bits per axis needed to index [0 .. maxDim-1]
+        m_bitsPerAxis = static_cast<std::uint32_t>(
+            std::ceil(std::log2(static_cast<double>(maxDim))));
+
+        // Limit: 21 bits per axis (Morton layout uses 21 bits per axis)
+        if (m_bitsPerAxis > 21) {
+            throw std::runtime_error("We support up to 21 bits per axis (max 2^21 voxels per dimension)!");
+        }
+
+        // One octree level per Morton bit
+        m_maxDepth = static_cast<size_t>(m_bitsPerAxis);
+
+        // The Morton hierarchy assumes a conceptual grid of 2^m_bitsPerAxis cells per axis.
+        // We only actually use [0..width/height/depth), but the AABB must match the full Morton grid
+        const float gridExtent = voxelSize * static_cast<float>(1u << m_bitsPerAxis);
+        m_rootBounds.minimum = bb.minimum;
+        m_rootBounds.maximum = bb.minimum + glm::vec3(gridExtent, gridExtent, gridExtent);
 
         const auto getCoords = [voxelSize, &bb](size_t x, size_t y, size_t z) -> glm::vec3 {
             glm::vec3 posvec{
@@ -555,7 +567,6 @@ private:
             voxelSize * 0.5f,
             voxelSize * 0.5f,
             voxelSize * 0.5f};
-        m_halfVoxelSize = halfVoxelSize;
 
         // Flatten all triangles from all shapes into a single list
         struct TriRef
@@ -582,7 +593,6 @@ private:
         }
 
         const size_t numTris = triList.size();
-
         if (numTris == 0) {
             std::println("No triangles in OBJ, nothing to voxelize.");
             return;
@@ -650,10 +660,7 @@ private:
                                     static_cast<size_t>(z));
 
                                 if (triBoxOverlapSchwarzSeidel(center, halfVoxelSize, p0, p1, p2)) {
-                                    Item it;
-                                    it.position = center;
-                                    it.morton = encodePositionToMorton(center);
-                                    localItems.push_back(it);
+                                    localItems.emplace_back(morton3D(x, y, z));
                                 }
                             }
                         }
@@ -690,7 +697,6 @@ private:
         std::println("Total triangles processed: {}", triangleCount);
         std::println("Total voxels inserted (before tree build): {}", m_items.size());
 
-        m_maxItems = estimateMaxItemsPerLeaf(m_items.size());
         // Now actually build the Morton octree (this already uses parallel sort)
         buildTree();
         m_nodes.shrink_to_fit();
