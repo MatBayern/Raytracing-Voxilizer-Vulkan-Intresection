@@ -250,7 +250,6 @@ private:
 
     struct Node
     {
-        // AABB is no longer stored per node to save memory.
         std::array<std::uint32_t, 8> children{}; // indices into m_nodes, or INVALID
 
         std::uint32_t start = 0; // start index into m_items
