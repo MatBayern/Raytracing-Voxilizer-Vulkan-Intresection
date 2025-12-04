@@ -18,7 +18,7 @@
 #include <thread>
 #include <vector>
 namespace {
-// LUT taken from
+// LUT taken from https://www.forceflow.be/2013/10/07/morton-encodingdecoding-through-bit-interleaving-implementations/?utm_source=chatgpt.com
 static constexpr uint32_t morton256_x[256] = {
     0x00000000,
     0x00000001, 0x00000008, 0x00000009, 0x00000040, 0x00000041, 0x00000048, 0x00000049, 0x00000200,
@@ -212,12 +212,9 @@ private:
     constexpr MortonCode morton3D(std::uint32_t x, std::uint32_t y, std::uint32_t z) const noexcept
     {
         MortonCode mortton = 0;
-        mortton = morton256_z[(z >> 16) & 0xFF] | // we start by shifting the third byte, since we only look at the first 21 bits
-            morton256_y[(y >> 16) & 0xFF] | morton256_x[(x >> 16) & 0xFF];
-        mortton = mortton << 48 | morton256_z[(z >> 8) & 0xFF] | // shifting second byte
-            morton256_y[(y >> 8) & 0xFF] | morton256_x[(x >> 8) & 0xFF];
-        mortton = mortton << 24 | morton256_z[(z) & 0xFF] | // first byte
-            morton256_y[(y) & 0xFF] | morton256_x[(x) & 0xFF];
+        mortton = morton256_z[(z >> 16) & 0xFF] | / morton256_y[(y >> 16) & 0xFF] | morton256_x[(x >> 16) & 0xFF];
+        mortton = mortton << 48 | morton256_z[(z >> 8) & 0xFF] | morton256_y[(y >> 8) & 0xFF] | morton256_x[(x >> 8) & 0xFF];
+        mortton = mortton << 24 | morton256_z[(z) & 0xFF] | morton256_y[(y) & 0xFF] | morton256_x[(x) & 0xFF];
         return mortton;
     }
 
