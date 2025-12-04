@@ -566,23 +566,6 @@ public:
     Octree& operator=(Octree&&) noexcept = default;
 
 private:
-    // Query items inside range
-    void query(const Aabb& range, std::vector<Item>* out)
-    {
-        buildTree();
-        if (m_nodes.empty())
-            return;
-
-        queryRecursive(0, m_rootBounds, range, out);
-    }
-
-    std::vector<Item> query(const Aabb& range)
-    {
-        std::vector<Item> result;
-        query(range, &result);
-        return result;
-    }
-
     Aabb computeBboxFromAttrib(const tinyobj::attrib_t& attrib) const noexcept
     {
         Aabb bb{};
