@@ -98,6 +98,7 @@ private:
     //=========================================================
 
     // Expands a 21-bit integer into 63 bits by inserting 2 zeros between each bit.
+    // source: https://www.forceflow.be/2013/10/07/morton-encodingdecoding-through-bit-interleaving-implementations/?utm_source=chatgpt.com
     constexpr MortonCode expandBits(std::uint32_t v) const noexcept
     {
         MortonCode x = v & 0x1fffffu; // 21 bits
