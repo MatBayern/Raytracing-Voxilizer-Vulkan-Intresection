@@ -324,7 +324,7 @@ private:
         }
 
         const std::uint32_t totalDepth = static_cast<std::uint32_t>(m_maxDepth);
-        const std::uint32_t levelShift = 3u * (totalDepth - 1u - depth);
+        const std::uint32_t levelShift = 3 * (totalDepth - 1 - depth);
 
         std::uint32_t cur = begin;
         for (int child = 0; child < 8; ++child) {
