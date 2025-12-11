@@ -310,16 +310,17 @@ private:
     std::uint32_t buildNodeRecursive(std::uint32_t begin,
         std::uint32_t end,
         const Aabb& bounds,
-        std::uint32_t depth)
+        std::uint32_t depth) noexcept
     {
         const std::uint32_t nodeIndex = static_cast<std::uint32_t>(m_nodes.size());
         m_nodes.emplace_back();
 
-        m_nodes[nodeIndex].start = begin;
-        m_nodes[nodeIndex].count = end - begin;
-        m_nodes[nodeIndex].children.fill(INVALID_INDEX);
+        Node& node = m_nodes[nodeIndex];
+        node.start = begin;
+        node.count = end - begin;
+        node.children.fill(INVALID_INDEX);
 
-        if (depth >= m_maxDepth || m_nodes[nodeIndex].count <= m_maxItems) {
+        if (depth >= m_maxDepth || node.count <= m_maxItems) {
             return nodeIndex;
         }
 
@@ -358,7 +359,6 @@ private:
         std::sort(std::execution::par_unseq, m_items.begin(), m_items.end(),
             [](const Item& a, const Item& b) { return a.morton < b.morton; });
 
-        m_nodes.clear();
         // A more conservative reserve: roughly one node per several items
         if (!m_items.empty()) {
             m_nodes.reserve(std::max<size_t>(1, m_items.size() / 4));
@@ -536,7 +536,7 @@ public:
         buildVoxelGrid(voxSize, mesh);
     }
 
-    std::vector<Aabb> getAabbs() const
+    std::vector<Aabb> getAabbs() const noexcept
     {
         std::vector<Aabb> ret;
         if (m_nodes.empty()) {
