@@ -262,6 +262,15 @@ private:
             }
             return true;
         }
+
+        // Retruns true if leaf
+        constexpr operator bool() const noexcept
+        {
+            for (auto c : children) {
+                if (c != INVALID_INDEX) return false;
+            }
+            return true;
+        }
     };
 
     static constexpr std::uint32_t INVALID_INDEX = std::numeric_limits<std::uint32_t>::max();
