@@ -316,15 +316,11 @@ private:
     }
 
     // Recursive build of nodes over sorted m_items
-    std::uint32_t buildNodeRecursive(std::uint32_t begin,
-        std::uint32_t end,
-        const Aabb& bounds,
-        std::uint32_t depth) noexcept
+    std::uint32_t buildNodeRecursive(std::uint32_t begin, std::uint32_t end, std::uint32_t depth) noexcept
     {
         const std::uint32_t nodeIndex = static_cast<std::uint32_t>(m_nodes.size());
-        m_nodes.emplace_back();
 
-        Node& node = m_nodes[nodeIndex];
+        Node& node = m_nodes.emplace_back();
         node.start = begin;
         node.count = end - begin;
         node.children.fill(INVALID_INDEX);
@@ -353,8 +349,7 @@ private:
             if (childBegin == cur)
                 continue;
 
-            const Aabb childBounds = makeChildAabb(bounds, child);
-            std::uint32_t childIndex = buildNodeRecursive(childBegin, cur, childBounds, depth + 1);
+            std::uint32_t childIndex = buildNodeRecursive(childBegin, cur, depth + 1);
 
             m_nodes[nodeIndex].children[child] = childIndex;
         }
@@ -373,7 +368,7 @@ private:
             m_nodes.reserve(std::max<size_t>(1, m_items.size() / 4));
         }
 
-        buildNodeRecursive(0, static_cast<std::uint32_t>(m_items.size()), m_rootBounds, 0);
+        buildNodeRecursive(0, static_cast<std::uint32_t>(m_items.size()), 0);
     }
 
     void queryRecursive(std::uint32_t nodeIndex,
