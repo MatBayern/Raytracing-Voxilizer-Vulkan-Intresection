@@ -55,7 +55,7 @@ public:
           m_z(z),
           m_org(org),
           m_voxelSize(voxelSize),
-          m_voxelDiameter(std::sqrt(3.f * m_voxelSize * m_voxelSize)),
+          m_voxelDiameter(std::hypot(m_voxelSize, m_voxelSize, m_voxelSize)),
           m_matIdx(x * y * z, -1)
     {
         m_materials.reserve(16);
@@ -116,12 +116,7 @@ public:
     {
         size_t bytes = 0;
 
-        bytes += m_voxel.capacity() * sizeof(T);
-        bytes += sizeof(m_materialMap);
-        for (auto it = m_materialMap.begin(); it != m_materialMap.end(); ++it) {
-            bytes += sizeof(it->first);
-            bytes += sizeof(it->second);
-        }
+        bytes += m_voxel.size() * sizeof(T);
 
         return bytes;
     }
