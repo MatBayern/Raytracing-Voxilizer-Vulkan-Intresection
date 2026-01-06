@@ -89,8 +89,8 @@ int main(int argc, char** argv)
 
     // Setup camera
     CameraManip.setWindowSize(SAMPLE_WIDTH, SAMPLE_HEIGHT);
-    CameraManip.setLookat(glm::vec3(5, 4, 4), glm::vec3(0, 1, 0), glm::vec3(0, 1, 0));
-
+    CameraManip.setLookat(glm::vec3(6.16636, 2.42256, -3.15471), glm::vec3(0, 1, 0), glm::vec3(0, 1, 0));
+    
     // Setup Vulkan
     if (!glfwVulkanSupported()) {
         printf("GLFW: Vulkan Not Supported\n");
@@ -158,6 +158,8 @@ int main(int argc, char** argv)
     // Creation of the example
     //  helloVk.loadModel(nvh::findFile("media/scenes/Medieval_building.obj", defaultSearchPaths, true));
     helloVk.loadModel(nvh::findFile("media/scenes/plane.obj", defaultSearchPaths, true));
+    // helloVk.loadModel(nvh::findFile("media/scenes/wuson.obj", defaultSearchPaths, true));
+
     helloVk.createAABB(argv[1], std::stof(argv[2]));
     // ""
     helloVk.createOffscreenRender();

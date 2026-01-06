@@ -419,108 +419,95 @@ private:
         }
     }
 
-    bool triBoxOverlapSchwarzSeidel(const glm::vec3& c, const glm::vec3& h, const glm::vec3& v0, const glm::vec3& v1, const glm::vec3& v2) const noexcept
+     // This test was taken from https://fileadmin.cs.lth.se/cs/Personal/Tomas_Akenine-Moller/code/tribox_tam.pdf
+    bool axisSeparates(const glm::vec3& axis, float R, const glm::vec3& p0, const glm::vec3& p1, const glm::vec3& p2) const
     {
-        // Translate triangle to box-centered coordinates
-        glm::vec3 p0 = v0 - c;
-        glm::vec3 p1 = v1 - c;
-        glm::vec3 p2 = v2 - c;
+        // If axis is (near) zero, skip it can't be a separating axis.
+        constexpr float eps = 1e-8f;
+        const float ax = std::fabs(axis.x) + std::fabs(axis.y) + std::fabs(axis.z);
+        if (ax < eps) return false;
 
-        // Triangle edges
+        const float p0d = glm::dot(p0, axis);
+        const float p1d = glm::dot(p1, axis);
+        const float p2d = glm::dot(p2, axis);
+        const float triMin = std::min(p0d, std::min(p1d, p2d));
+        const float triMax = std::max(p0d, std::max(p1d, p2d));
+        return (triMin > R) || (triMax < -R);
+    }
+
+    bool aabbAxisSeparates(const glm::vec3& h, const glm::vec3& p0, const glm::vec3& p1, const glm::vec3& p2) const
+    {
+        const float minx = std::min(p0.x, std::min(p1.x, p2.x));
+        const float maxx = std::max(p0.x, std::max(p1.x, p2.x));
+        if (minx > h.x || maxx < -h.x) return true;
+
+        const float miny = std::min(p0.y, std::min(p1.y, p2.y));
+        const float maxy = std::max(p0.y, std::max(p1.y, p2.y));
+        if (miny > h.y || maxy < -h.y) return true;
+
+        const float minz = std::min(p0.z, std::min(p1.z, p2.z));
+        const float maxz = std::max(p0.z, std::max(p1.z, p2.z));
+        if (minz > h.z || maxz < -h.z) return true;
+
+        return false;
+    }
+    bool planeSeparates(const glm::vec3& normal, const glm::vec3& h, const glm::vec3& p0) const
+    {
+        // If triangle is degenerate (very small area), skip plane test.
+        constexpr float eps = 1e-8f;
+        glm::vec3 an = glm::abs(normal);
+        const float len = an.x + an.y + an.z;
+        if (len < eps) return false;
+
+        const float r = h.x * an.x + h.y * an.y + h.z * an.z; // projection radius of box onto normal
+        const float s = glm::dot(normal, p0); // signed distance of triangle to origin (box-centered)
+        return std::fabs(s) > r;
+    }
+
+    // Main entry: box center c, half sizes h; triangle v0,v1,v2 (all in same space).
+    bool triBoxOverlap(const glm::vec3& c, const glm::vec3& h, const glm::vec3& v0, const glm::vec3& v1, const glm::vec3& v2) const
+    {
+        // Translate triangle so the box is centered at the origin.
+        const glm::vec3 p0 = v0 - c;
+        const glm::vec3 p1 = v1 - c;
+        const glm::vec3 p2 = v2 - c;
+
+        // Edges
         const glm::vec3 e0 = p1 - p0;
         const glm::vec3 e1 = p2 - p1;
         const glm::vec3 e2 = p0 - p2;
 
-        // 1) AABB axis tests (x,y,z)
+        // 1) Test the 3 AABB axes (x, y, z).
+        if (aabbAxisSeparates(h, p0, p1, p2)) return false;
 
-        float minx = fminf(p0.x, fminf(p1.x, p2.x));
-        float maxx = fmaxf(p0.x, fmaxf(p1.x, p2.x));
-        if (minx > h.x || maxx < -h.x) return false;
+        // 2) Test 9 cross-product axes = cross(edge, axisX/Y/Z).
+        // For robustness and simplicity, project all three triangle verts each time.
+        // Axis from e * (1,0,0) = (0, -ez, ey) etc.
+        auto testEdgeAxes = [&](const glm::vec3& e) -> bool {
+            glm::vec3 Lx = {0.0f, -e.z, e.y};
+            float Rx = h.y * std::fabs(Lx.y) + h.z * std::fabs(Lx.z);
+            if (axisSeparates(Lx, Rx, p0, p1, p2)) return true;
 
-        float miny = fminf(p0.y, fminf(p1.y, p2.y));
-        float maxy = fmaxf(p0.y, fmaxf(p1.y, p2.y));
-        if (miny > h.y || maxy < -h.y) return false;
+            glm::vec3 Ly = {e.z, 0.0f, -e.x};
+            float Ry = h.x * std::fabs(Ly.x) + h.z * std::fabs(Ly.z);
+            if (axisSeparates(Ly, Ry, p0, p1, p2)) return true;
 
-        float minz = fminf(p0.z, fminf(p1.z, p2.z));
-        float maxz = fmaxf(p0.z, fmaxf(p1.z, p2.z));
-        if (minz > h.z || maxz < -h.z) return false;
+            glm::vec3 Lz = {-e.y, e.x, 0.0f};
+            float Rz = h.x * std::fabs(Lz.x) + h.y * std::fabs(Lz.y);
+            if (axisSeparates(Lz, Rz, p0, p1, p2)) return true;
 
-        // Precompute |edges|
-        const glm::vec3 ae0 = glm::abs(e0);
-        const glm::vec3 ae1 = glm::abs(e1);
-        const glm::vec3 ae2 = glm::abs(e2);
-
-        const auto sepAxis = [&](float px0, float px1, float px2, float ra) -> bool {
-            const float mn = fminf(px0, fminf(px1, px2));
-            const float mx = fmaxf(px0, fmaxf(px1, px2));
-            return (mn > ra) || (mx < -ra);
+            return false;
         };
 
-        {
-            float p0d = -p0.z * e0.y + p0.y * e0.z;
-            float p1d = -p1.z * e0.y + p1.y * e0.z;
-            float p2d = -p2.z * e0.y + p2.y * e0.z;
-            float R = h.y * ae0.z + h.z * ae0.y;
-            if (sepAxis(p0d, p1d, p2d, R)) return false;
+        if (testEdgeAxes(e0)) return false;
+        if (testEdgeAxes(e1)) return false;
+        if (testEdgeAxes(e2)) return false;
 
-            p0d = p0.x * e0.z - p0.z * e0.x;
-            p1d = p1.x * e0.z - p1.z * e0.x;
-            p2d = p2.x * e0.z - p2.z * e0.x;
-            R = h.x * ae0.z + h.z * ae0.x;
-            if (sepAxis(p0d, p1d, p2d, R)) return false;
-
-            p0d = -p0.y * e0.x + p0.x * e0.y;
-            p1d = -p1.y * e0.x + p1.x * e0.y;
-            p2d = -p2.y * e0.x + p2.x * e0.y;
-            R = h.x * ae0.y + h.y * ae0.x;
-            if (sepAxis(p0d, p1d, p2d, R)) return false;
-        }
-        {
-            float p0d = -p0.z * e1.y + p0.y * e1.z;
-            float p1d = -p1.z * e1.y + p1.y * e1.z;
-            float p2d = -p2.z * e1.y + p2.y * e1.z;
-            float R = h.y * ae1.z + h.z * ae1.y;
-            if (sepAxis(p0d, p1d, p2d, R)) return false;
-
-            p0d = p0.x * e1.z - p0.z * e1.x;
-            p1d = p1.x * e1.z - p1.z * e1.x;
-            p2d = p2.x * e1.z - p2.z * e1.x;
-            R = h.x * ae1.z + h.z * ae1.x;
-            if (sepAxis(p0d, p1d, p2d, R)) return false;
-
-            p0d = -p0.y * e1.x + p0.x * e1.y;
-            p1d = -p1.y * e1.x + p1.x * e1.y;
-            p2d = -p2.y * e1.x + p2.x * e1.y;
-            R = h.x * ae1.y + h.y * ae1.x;
-            if (sepAxis(p0d, p1d, p2d, R)) return false;
-        }
-        {
-            float p0d = -p0.z * e2.y + p0.y * e2.z;
-            float p1d = -p1.z * e2.y + p1.y * e2.z;
-            float p2d = -p2.z * e2.y + p2.y * e2.z;
-            float R = h.y * ae2.z + h.z * ae2.y;
-            if (sepAxis(p0d, p1d, p2d, R)) return false;
-
-            p0d = p0.x * e2.z - p0.z * e2.x;
-            p1d = p1.x * e2.z - p1.z * e2.x;
-            p2d = p2.x * e2.z - p2.z * e2.x;
-            float R2 = h.x * ae2.z + h.z * ae2.x;
-            if (sepAxis(p0d, p1d, p2d, R2)) return false;
-
-            p0d = -p0.y * e2.x + p0.x * e2.y;
-            p1d = -p1.y * e2.x + p1.x * e2.y;
-            p2d = -p2.y * e2.x + p2.x * e2.y;
-            float R3 = h.x * ae2.y + h.y * ae2.x;
-            if (sepAxis(p0d, p1d, p2d, R3)) return false;
-        }
-
-        // Triangle plane vs box
+        // 3) Test triangle plane against the box.
         const glm::vec3 n = glm::cross(e0, e1);
-        const glm::vec3 an = glm::abs(n);
-        const float r = h.x * an.x + h.y * an.y + h.z * an.z;
-        const float s = n.x * p0.x + n.y * p0.y + n.z * p0.z; // signed distance
-        if (fabsf(s) > r) return false;
+        if (planeSeparates(n, h, p0)) return false;
 
+        // If none of the axes separate, there is overlap.
         return true;
     }
 
@@ -657,7 +644,7 @@ private:
             voxelSize * 0.5f,
             voxelSize * 0.5f};
 
-        if (true) {
+        if (false) {
             for (size_t s = 0; s < ObjData.shapes.size(); ++s) {
                 const auto& mesh = ObjData.shapes[s].mesh;
 
@@ -702,7 +689,7 @@ private:
                                     static_cast<size_t>(x),
                                     static_cast<size_t>(y),
                                     static_cast<size_t>(z));
-                                if (triBoxOverlapSchwarzSeidel(center, halfVoxelSize, p0, p1, p2)) {
+                                if (triBoxOverlap(center, halfVoxelSize, p0, p1, p2)) {
                                     m_items.emplace_back(morton3D(x, y, z));
                                 }
                             }
@@ -803,7 +790,7 @@ private:
                                         static_cast<size_t>(y),
                                         static_cast<size_t>(z));
 
-                                    if (triBoxOverlapSchwarzSeidel(center, halfVoxelSize, p0, p1, p2)) {
+                                    if (triBoxOverlap(center, halfVoxelSize, p0, p1, p2)) {
                                         localItems.emplace_back(morton3D(x, y, z));
                                     }
                                 }

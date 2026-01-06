@@ -186,7 +186,7 @@ private:
         for (int z = zStart; z < zEnd; ++z) {
             for (int y = yStart; y < yEnd; ++y) {
                 for (int x = xStart; x < xEnd; ++x) {
-                    if (triBoxOverlapSchwarzSeidel(voxelGrid.getCorrds(x, y, z),
+                    if (triBoxOverlap(voxelGrid.getCorrds(x, y, z),
                             halfVoxelSize, v0, v1, v2)) {
                         voxelGrid.setVoxel(x, y, z, material);
                     }
@@ -373,15 +373,15 @@ public:
                     if (i + 2 >= mesh.indices.size()) break; // Safety check
 
                     int materialId = -1;
-                    if (!mesh.material_ids.empty()) {
+                    /*if (!mesh.material_ids.empty()) {
                         const size_t faceIndex = i / 3;
                         if (faceIndex < mesh.material_ids.size()) {
                             materialId = mesh.material_ids[faceIndex];
                         }
-                    }
+                    }*/
 
                     MaterialObj material{};
-                    if (materialId > -1 && static_cast<size_t>(materialId) < m_materials.size()) {
+                    /*if (materialId > -1 && static_cast<size_t>(materialId) < m_materials.size()) {
                         const auto& materialToCopy = m_materials[materialId];
                         material.ior = materialToCopy.ior;
                         material.dissolve = materialToCopy.dissolve;
@@ -392,7 +392,7 @@ public:
                         material.specular = {materialToCopy.specular[0], materialToCopy.specular[1], materialToCopy.specular[2]};
                         material.transmittance = {materialToCopy.transmittance[0], materialToCopy.transmittance[1], materialToCopy.transmittance[2]};
                         material.emission = {materialToCopy.emission[0], materialToCopy.emission[1], materialToCopy.emission[2]};
-                    }
+                    }*/
 
                     const tinyobj::index_t i0 = mesh.indices[i];
                     const tinyobj::index_t i1 = mesh.indices[i + 1];

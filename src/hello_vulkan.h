@@ -27,10 +27,18 @@
 #include "shaders/host_device.h"
 #include "voxelgrid.hpp"
 
+#include "VoxelBuilder.hpp"
 #include "octTree.hpp"
+#include "voxelgridAABBstruct.hpp"
+#include "voxelgridBool.hpp"
 
 // #VKRay
 #include "nvvk/raytraceKHR_vk.hpp"
+
+#include <chrono>
+#include <cstdint>
+#include <print>
+#include <vector>
 
 //--------------------------------------------------------------------------------------------------
 // Simple rasterizer of OBJ objects
@@ -159,4 +167,78 @@ public:
 
     void createAABB(const std::string& path, float voxleSize);
     auto AABBToVkGeometryKHR();
+};
+
+template <typename T, bool UseOctree = false>
+class Benchmaker final
+{
+    const float m_voxelSize;
+    const std::filesystem::path m_path;
+    std::vector<std::chrono::milliseconds> m_VoxelBuildTime;
+    std::vector<std::chrono::milliseconds> m_AABBBuildTime;
+    std::vector<uint64_t> m_MemConsume;
+
+    void runBenachmark()
+    {
+
+        VoxelBuilder<T> voxelBuilder(m_path);
+        const auto startVoxelGrid = std::chrono::high_resolution_clock::now();
+        T vox = voxelBuilder.buildVoxelGrid(m_voxelSize);
+        const auto stopVoxelGrid = std::chrono::high_resolution_clock::now();
+
+        const auto startAabb = std::chrono::high_resolution_clock::now();
+        const std::vector<Aabb> aabbs = vox.getAabbs();
+        const auto stopAabb = std::chrono::high_resolution_clock::now();
+
+        m_VoxelBuildTime.push_back(std::chrono::duration_cast<std::chrono::milliseconds>(stopVoxelGrid - startVoxelGrid));
+        m_AABBBuildTime.push_back(std::chrono::duration_cast<std::chrono::milliseconds>(stopAabb - startAabb));
+        m_MemConsume.push_back(vox.getMemoryUsageBytes());
+    }
+
+    void runBenachmarkOctree()
+    {
+        const auto startVoxelGrid = std::chrono::high_resolution_clock::now();
+        Octree tree{std::filesystem::path(m_path), m_voxelSize};
+        const auto stopVoxelGrid = std::chrono::high_resolution_clock::now();
+
+        const auto startAabb = std::chrono::high_resolution_clock::now();
+        const std::vector<Aabb> aabbs = tree.getAabbs();
+        const auto stopAabb = std::chrono::high_resolution_clock::now();
+
+        m_VoxelBuildTime.push_back(std::chrono::duration_cast<std::chrono::milliseconds>(stopVoxelGrid - startVoxelGrid));
+        m_AABBBuildTime.push_back(std::chrono::duration_cast<std::chrono::milliseconds>(stopAabb - startAabb));
+        m_MemConsume.push_back(tree.getMemoryUsageBytes());
+    }
+
+public:
+    Benchmaker(const std::filesystem::path& path, float voxelSize, size_t runs) : m_path(path), m_voxelSize(voxelSize)
+    {
+        for (size_t i = 0; i < runs; i++) {
+            if constexpr (UseOctree) {
+                runBenachmarkOctree();
+            } else {
+                runBenachmark();
+            }
+        }
+
+        long long sumVoxel = 0;
+        for (const auto& d : m_VoxelBuildTime) {
+            std::println("");
+            sumVoxel += d.count();
+        }
+        std::println("Voxel build took on avrage {}ms", static_cast<double>(sumVoxel) / m_VoxelBuildTime.size());
+        long long sumAABB = 0;
+        for (const auto& d : m_AABBBuildTime) {
+            sumAABB += d.count();
+        }
+        std::println("AABB build took on avrage {}ms", static_cast<double>(sumAABB) / m_AABBBuildTime.size());
+
+        uint64_t sumMEM = 0;
+        for (auto& d : m_MemConsume) {
+            sumMEM += d;
+        }
+        std::println("Mem constium build took on avrage {}kb", sumMEM / (1000 * m_MemConsume.size()));
+
+        std::println("Both together took an average build took on avrage {}ms", static_cast<double>(sumAABB + sumVoxel) / m_AABBBuildTime.size());
+    }
 };

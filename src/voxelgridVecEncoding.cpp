@@ -24,7 +24,7 @@ void VoxelGridVec::setVoxel(size_t x, size_t y, size_t z, const MaterialObj& mat
         throw std::runtime_error("Index out of bounds");
     }
 
-    addMatrialIfNeeded(m_voxelSet, material);
+    // addMatrialIfNeeded(m_voxelSet, material);
 
     // Treat voxelSize as cube edge length we assume this are the center corrdinates
     const float half = 0.5f * m_voxelSize;

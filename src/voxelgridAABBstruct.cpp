@@ -28,7 +28,7 @@ void VoxelGridAABBstruct::setVoxel(size_t x, size_t y, size_t z, const MaterialO
     }
 
     const size_t idx = map3dto1d(x, y, z);
-    addMatrialIfNeeded(idx, material);
+    // addMatrialIfNeeded(idx, material);
 
     // Treat voxelSize as cube edge length we assume this are the center corrdinates
 

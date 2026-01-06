@@ -61,7 +61,7 @@ void VoxelGridBool::setVoxel(size_t x, size_t y, size_t z, const MaterialObj& ma
     const size_t idx = map3dto1d(x, y, z);
     const size_t intIdx = idx / (sizeof(VoxelType) * 8); // Which int
     const size_t bitIdx = idx % (sizeof(VoxelType) * 8); // Which bit in that int
-    addMatrialIfNeeded(idx, material);
+    // addMatrialIfNeeded(idx, material);
 
     m_voxel[intIdx] |= (1u << bitIdx);
     m_voxelSet++;
