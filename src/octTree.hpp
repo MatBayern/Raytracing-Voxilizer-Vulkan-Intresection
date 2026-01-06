@@ -364,39 +364,11 @@ private:
             [](const Item& a, const Item& b) { return a.morton < b.morton; });
 
         // A more conservative reserve: roughly one node per several items
-        if (!m_items.empty()) {
+        if (!m_items.empty()) [[likely]] {
             m_nodes.reserve(std::max<size_t>(1, m_items.size() / 4));
         }
 
         buildNodeRecursive(0, static_cast<std::uint32_t>(m_items.size()), 0);
-    }
-
-    void queryRecursive(std::uint32_t nodeIndex,
-        const Aabb& nodeBounds,
-        const Aabb& range,
-        std::vector<Item>* out) const
-    {
-        if (!aabbIntersects(nodeBounds, range))
-            return;
-
-        const Node& node = m_nodes[nodeIndex];
-
-        if (node.isLeaf()) {
-            const std::uint32_t end = node.start + node.count;
-            for (std::uint32_t i = node.start; i < end; ++i) {
-                const Item& it = m_items[i];
-                if (aabbContains(range, decodeMortonToPosition(it.morton)))
-                    out->push_back(it);
-            }
-        } else {
-            for (int c = 0; c < 8; ++c) {
-                std::uint32_t ci = node.children[c];
-                if (ci != INVALID_INDEX) {
-                    Aabb childBounds = makeChildAabb(nodeBounds, c);
-                    queryRecursive(ci, childBounds, range, out);
-                }
-            }
-        }
     }
 
     void traverseNodesRawRecursive(std::uint32_t nodeIndex, std::vector<Aabb>* out) const
@@ -604,7 +576,7 @@ private:
             return;
         }
 
-        // Number of bits per axis needed to index [0 .. maxDim-1]
+        // Number of bits per axis needed to index [0 ... maxDim-1]
         m_bitsPerAxis = static_cast<std::uint32_t>(
             std::ceil(std::log2(static_cast<double>(maxDim))));
 
