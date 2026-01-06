@@ -557,7 +557,6 @@ private:
     }
 
     // Build voxel grid and fill octree with voxel centers (Morton-coded)
-    // Build voxel grid and fill octree with voxel centers (Morton-coded)
     void buildVoxelGrid(float voxelSize, const ObjMesh& ObjData)
     {
         const auto bb = computeBboxFromAttrib(ObjData.attrib);
