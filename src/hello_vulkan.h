@@ -176,7 +176,7 @@ class Benchmaker final
     const std::filesystem::path m_path;
     std::vector<std::chrono::milliseconds> m_VoxelBuildTime;
     std::vector<std::chrono::milliseconds> m_AABBBuildTime;
-    std::vector<uint64_t> m_MemConsume;
+    uint64_t m_MemConsume = 0;
 
     void runBenachmark()
     {
@@ -192,7 +192,7 @@ class Benchmaker final
 
         m_VoxelBuildTime.push_back(std::chrono::duration_cast<std::chrono::milliseconds>(stopVoxelGrid - startVoxelGrid));
         m_AABBBuildTime.push_back(std::chrono::duration_cast<std::chrono::milliseconds>(stopAabb - startAabb));
-        m_MemConsume.push_back(vox.getMemoryUsageBytes());
+        m_MemConsume = vox.getMemoryUsageBytes();
     }
 
     void runBenachmarkOctree()
@@ -207,7 +207,7 @@ class Benchmaker final
 
         m_VoxelBuildTime.push_back(std::chrono::duration_cast<std::chrono::milliseconds>(stopVoxelGrid - startVoxelGrid));
         m_AABBBuildTime.push_back(std::chrono::duration_cast<std::chrono::milliseconds>(stopAabb - startAabb));
-        m_MemConsume.push_back(tree.getMemoryUsageBytes());
+        m_MemConsume = tree.getMemoryUsageBytes();
     }
 
 public:
@@ -233,11 +233,8 @@ public:
         }
         std::println("AABB build took on avrage {}ms", static_cast<double>(sumAABB) / m_AABBBuildTime.size());
 
-        uint64_t sumMEM = 0;
-        for (auto& d : m_MemConsume) {
-            sumMEM += d;
-        }
-        std::println("Mem constium build took on avrage {}kb", sumMEM / (1000 * m_MemConsume.size()));
+
+        std::println("Mem constium build took on avrage {}kb", m_MemConsume);
 
         std::println("Both together took an average build took on avrage {}ms", static_cast<double>(sumAABB + sumVoxel) / m_AABBBuildTime.size());
     }
