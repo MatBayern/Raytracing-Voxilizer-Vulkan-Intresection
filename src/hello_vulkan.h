@@ -169,7 +169,7 @@ public:
     auto AABBToVkGeometryKHR();
 };
 
-template <typename T, bool UseOctree = false>
+template <DerivedFromVoxelGrid T, bool UseOctree = false>
 class Benchmaker final
 {
     const float m_voxelSize;
