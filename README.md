@@ -57,7 +57,6 @@ From your build output directory (adjust the binary name/path for your platform)
 RaytracingVoxilizerVulkan.exe <Path to obj file> <Voxlesize>
 ```
 
-
 ## Troubleshooting
 
 - **Ray tracing extensions missing** (`VK_ERROR_EXTENSION_NOT_PRESENT`)  
@@ -68,6 +67,8 @@ RaytracingVoxilizerVulkan.exe <Path to obj file> <Voxlesize>
   Provide `-DNVPRO_CORE_DIR=/path/to/nvpro_core` or set an env var with that path.
 - **Stale build artifacts**  
   Try a clean build: delete the `build/` folder and reconfigure.
+- **No startup project found**  
+You need to select vk_src_KHR as the startprojcet
 
 ## Acknowledgements
 
